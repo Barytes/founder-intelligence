@@ -3,6 +3,29 @@ import json
 from typing import Any
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+ARTIFACT_ROOT = REPO_ROOT / "data" / "agentic"
+
+
+def _normalize_path(path: str | Path) -> Path:
+    path_obj = Path(path)
+    if not path_obj.is_absolute():
+        path_obj = REPO_ROOT / path_obj
+    return path_obj.resolve()
+
+
+def _require_path_in_repo(path: Path) -> Path:
+    if not path.is_relative_to(REPO_ROOT):
+        raise ValueError(f"path outside repository: {path}")
+    return path
+
+
+def _require_artifact_dir_within_data_agentic(path: Path) -> Path:
+    if not path.is_relative_to(ARTIFACT_ROOT):
+        raise ValueError(f"artifact_dir outside data/agentic: {path}")
+    return path
+
+
 def _read_json(path: Path) -> Any:
     if not path.exists():
         raise FileNotFoundError(f"artifact not found: {path}")
@@ -11,21 +34,24 @@ def _read_json(path: Path) -> Any:
 
 
 def read_signals(arguments: dict[str, Any], context: dict[str, Any]) -> Any:
-    path = Path(arguments.get("path") or context.get("signals_path") or "data/signals/latest.json")
-    return _read_json(path)
+    path = _normalize_path(
+        arguments.get("path") or context.get("signals_path") or "data/signals/latest.json"
+    )
+    return _read_json(_require_path_in_repo(path))
 
 
 def read_canonical_items(arguments: dict[str, Any], context: dict[str, Any]) -> Any:
-    path = Path(
+    path = _normalize_path(
         arguments.get("path")
         or context.get("canonical_items_path")
         or "data/canonical-items/latest.json"
     )
-    return _read_json(path)
+    return _read_json(_require_path_in_repo(path))
 
 
 def write_agentic_artifact(arguments: dict[str, Any], context: dict[str, Any]) -> dict[str, list[str]]:
-    artifact_dir = Path(context.get("artifact_dir") or "data/agentic")
+    artifact_dir = _normalize_path(context.get("artifact_dir") or str(ARTIFACT_ROOT))
+    artifact_dir = _require_artifact_dir_within_data_agentic(artifact_dir)
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
     final_text = str(arguments.get("final_text") or "")

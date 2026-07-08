@@ -1,4 +1,6 @@
 import json
+import shutil
+from pathlib import Path
 
 import pytest
 
@@ -37,27 +39,55 @@ def test_tool_registry_rejects_disabled_tool():
         registry.run("echo", {}, {})
 
 
-def test_read_signals_reads_configured_file(tmp_path):
-    signals_path = tmp_path / "signals.json"
-    signals_path.write_text(json.dumps({"signals": [{"title": "A"}]}), encoding="utf-8")
+def test_read_signals_reads_configured_file():
+    registry = build_default_registry({"read_signals": ToolConfig(enabled=True)})
+    allowed_path = Path.cwd() / "data" / "signals" / "latest.json"
+    allowed_path.parent.mkdir(parents=True, exist_ok=True)
+    allowed_path.write_text(json.dumps({"signals": [{"title": "A"}]}), encoding="utf-8")
+    try:
+        result = registry.run("read_signals", {}, {"signals_path": str(allowed_path)})
+        assert result["signals"][0]["title"] == "A"
+    finally:
+        if allowed_path.exists():
+            allowed_path.unlink()
+
+
+def test_read_signals_rejects_outside_path():
     registry = build_default_registry({"read_signals": ToolConfig(enabled=True)})
 
-    result = registry.run("read_signals", {}, {"signals_path": str(signals_path)})
+    with pytest.raises(ValueError, match="path outside repository"):
+        registry.run("read_signals", {}, {"signals_path": "/tmp/outside-signals.json"})
 
-    assert result["signals"][0]["title"] == "A"
+
+def test_write_agentic_artifact_writes_json_and_markdown():
+    registry = build_default_registry({"write_agentic_artifact": ToolConfig(enabled=True)})
+    allowed_dir = Path.cwd() / "data" / "agentic" / "test-output"
+    if allowed_dir.exists():
+        shutil.rmtree(allowed_dir)
+
+    try:
+        result = registry.run(
+            "write_agentic_artifact",
+            {"final_text": "hello", "data": {"answer": 42}},
+            {"artifact_dir": str(allowed_dir)},
+        )
+
+        assert (allowed_dir / "latest.json").exists()
+        assert (allowed_dir / "latest.md").read_text(encoding="utf-8") == "hello\n"
+        assert sorted(result["artifact_paths"]) == sorted(
+            [str(allowed_dir / "latest.json"), str(allowed_dir / "latest.md")]
+        )
+    finally:
+        if allowed_dir.exists():
+            shutil.rmtree(allowed_dir)
 
 
-def test_write_agentic_artifact_writes_json_and_markdown(tmp_path):
+def test_write_agentic_artifact_rejects_outside_artifact_dir():
     registry = build_default_registry({"write_agentic_artifact": ToolConfig(enabled=True)})
 
-    result = registry.run(
-        "write_agentic_artifact",
-        {"final_text": "hello", "data": {"answer": 42}},
-        {"artifact_dir": str(tmp_path)},
-    )
-
-    assert (tmp_path / "latest.json").exists()
-    assert (tmp_path / "latest.md").read_text(encoding="utf-8") == "hello\n"
-    assert sorted(result["artifact_paths"]) == sorted(
-        [str(tmp_path / "latest.json"), str(tmp_path / "latest.md")]
-    )
+    with pytest.raises(ValueError, match="artifact_dir outside data/agentic"):
+        registry.run(
+            "write_agentic_artifact",
+            {"final_text": "hello", "data": {"answer": 42}},
+            {"artifact_dir": "/tmp/outside-agentic"},
+        )
