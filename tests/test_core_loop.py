@@ -1,0 +1,104 @@
+from agentic_core.core import AgenticCore
+from agentic_core.providers.base import ProviderResponse, ProviderToolCall
+from agentic_core.schemas import AgenticConfig, AgentConfig, PathConfig, ProviderConfig, ToolConfig
+from agentic_core.tools.registry import ToolRegistry
+
+
+class FakeProvider:
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, *, messages, tools, temperature):
+        self.calls += 1
+        if self.calls == 1:
+            return ProviderResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {"name": "echo", "arguments": '{"text":"hi"}'},
+                        }
+                    ],
+                },
+                tool_calls=[ProviderToolCall(id="call_1", name="echo", arguments={"text": "hi"})],
+            )
+        return ProviderResponse(
+            message={"role": "assistant", "content": "final answer"},
+            usage={"total_tokens": 12},
+        )
+
+
+def make_config(max_turns=4):
+    return AgenticConfig(
+        provider=ProviderConfig(
+            type="openai_compatible",
+            api_key_env="TEST_KEY",
+            api_key="secret",
+            base_url="https://example.test/v1",
+            model="test-model",
+        ),
+        agent=AgentConfig(
+            system_prompt="System prompt",
+            max_turns=max_turns,
+            temperature=0.2,
+            timeout_seconds=30,
+        ),
+        tools={"echo": ToolConfig(enabled=True)},
+        paths=PathConfig(),
+    )
+
+
+def test_core_runs_tool_loop_to_final_answer():
+    provider = FakeProvider()
+    registry = ToolRegistry({"echo": ToolConfig(enabled=True)})
+    registry.register(
+        name="echo",
+        description="Echo text",
+        parameters={
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+        handler=lambda args, context: {"echo": args["text"]},
+    )
+    core = AgenticCore(config=make_config(), provider=provider, tools=registry)
+
+    result = core.run(messages=[{"role": "user", "content": "say hi"}], context={})
+
+    assert result.status == "ok"
+    assert result.final_text == "final answer"
+    assert result.tool_calls[0].name == "echo"
+    assert result.tool_calls[0].result == {"echo": "hi"}
+    assert result.usage == {"total_tokens": 12}
+
+
+def test_core_returns_error_when_max_turns_reached():
+    class LoopingProvider:
+        def complete(self, *, messages, tools, temperature):
+            return ProviderResponse(
+                message={"role": "assistant", "content": "", "tool_calls": []},
+                tool_calls=[ProviderToolCall(id="call_1", name="echo", arguments={"text": "hi"})],
+            )
+
+    registry = ToolRegistry({"echo": ToolConfig(enabled=True)})
+    registry.register(
+        name="echo",
+        description="Echo text",
+        parameters={
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+        handler=lambda args, context: {"echo": args["text"]},
+    )
+    core = AgenticCore(config=make_config(max_turns=1), provider=LoopingProvider(), tools=registry)
+
+    result = core.run(messages=[{"role": "user", "content": "loop"}], context={})
+
+    assert result.status == "error"
+    assert result.errors == ["max turns reached"]
