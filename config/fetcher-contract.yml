@@ -1,0 +1,245 @@
+version: 1
+
+purpose: Define the common adapter contract for rss, mcp, api, and html fetchers.
+
+adapter_interface:
+  method: fetch
+  input:
+    source:
+      required_fields:
+        - id
+        - source_type
+        - provider
+        - fetcher
+        - connection
+      optional_fields:
+        - schedule
+        - tags
+        - category
+        - priority
+        - notes
+    context:
+      required_fields:
+        - run_id
+        - fetched_at
+      optional_fields:
+        - cursor
+        - since
+        - max_items
+        - timeout_seconds
+        - retry_attempts
+  output:
+    required_fields:
+      - source_id
+      - source_type
+      - provider
+      - fetched_at
+      - status
+      - items
+      - errors
+    optional_fields:
+      - next_cursor
+      - rate_limit
+      - raw_feed_metadata
+
+status_values:
+  - ok
+  - partial
+  - failed
+  - skipped
+
+raw_item_contract:
+  required_fields:
+    - raw_id
+    - title
+  recommended_fields:
+    - platform_item_id
+    - guid
+    - link
+    - published_at
+    - author
+    - summary
+    - content
+    - categories
+    - metrics
+    - media
+    - raw
+  notes:
+    - Fetchers return raw normalized-enough items, not final canonical items.
+    - Final canonicalization is handled by config/ingestion-rules.yml.
+    - raw_id must be stable inside one fetch result even when platform_item_id is absent.
+
+canonical_output_boundary:
+  fetcher_responsibilities:
+    - connect_to_source
+    - authenticate_if_needed
+    - fetch_items
+    - expose_source_native_ids
+    - return_raw_payload_when_allowed
+    - report_fetch_errors
+  ingestion_responsibilities:
+    - field_mapping
+    - datetime_normalization
+    - html_cleanup
+    - link_normalization
+    - content_hashing
+    - deduplication
+    - quality_gates
+
+fetcher_types:
+  rss:
+    input_connection_required:
+      - rss_url
+    input_connection_optional:
+      - rsshub_route
+      - required_env
+    output_expectations:
+      item_id_priority:
+        - guid
+        - link
+        - title
+      pagination: none
+      auth: optional
+    failure_modes:
+      - rss_url_unreachable
+      - invalid_xml
+      - rsshub_route_error
+      - upstream_rate_limited
+
+  mcp:
+    input_connection_required:
+      - tool
+    input_connection_optional:
+      - query
+      - accounts
+      - filters
+      - cursor
+      - required_env
+    output_expectations:
+      item_id_priority:
+        - platform_item_id
+        - link
+        - title
+      pagination: cursor
+      auth: usually_required
+    failure_modes:
+      - tool_unavailable
+      - auth_expired
+      - captcha_or_verification_required
+      - rate_limited
+      - platform_schema_changed
+
+  api:
+    input_connection_required:
+      - endpoint
+    input_connection_optional:
+      - method
+      - params
+      - headers_env
+      - body
+      - cursor
+    output_expectations:
+      item_id_priority:
+        - platform_item_id
+        - id
+        - link
+      pagination: cursor_or_page
+      auth: optional
+    failure_modes:
+      - endpoint_unreachable
+      - auth_failed
+      - rate_limited
+      - invalid_json
+      - schema_changed
+
+  html:
+    input_connection_required:
+      - url
+      - selectors
+    input_connection_optional:
+      - render_javascript
+      - headers_env
+      - pagination
+    output_expectations:
+      item_id_priority:
+        - link
+        - title
+      pagination: selector_or_url_pattern
+      auth: optional
+    failure_modes:
+      - page_unreachable
+      - selector_missing
+      - blocked_by_anti_crawler
+      - rendered_content_empty
+
+error_contract:
+  error_fields:
+    - code
+    - message
+    - retryable
+    - item_scope
+    - raw_status
+  item_scope_values:
+    - source
+    - item
+  retryable_error_codes:
+    - timeout
+    - upstream_rate_limited
+    - endpoint_unreachable
+    - rsshub_route_error
+  non_retryable_error_codes:
+    - auth_failed
+    - auth_expired
+    - invalid_config
+    - tool_unavailable
+    - selector_missing
+
+rate_limit_contract:
+  fields:
+    - limit
+    - remaining
+    - reset_at
+    - retry_after_seconds
+  behavior:
+    when_rate_limited: return partial or failed with retryable error
+    do_not_sleep_inside_fetcher: true
+
+example_outputs:
+  rss_ok:
+    source_id: github-trending-daily
+    source_type: rss
+    provider: github
+    fetched_at: "2026-07-08T10:00:00+08:00"
+    status: ok
+    items:
+      - raw_id: "rss:github-trending-daily:1"
+        guid: "https://github.com/example/project"
+        title: "example/project"
+        link: "https://github.com/example/project"
+        summary: "A useful open-source project."
+        raw: {}
+    errors: []
+
+  mcp_partial:
+    source_id: xiaohongshu-ai-founder
+    source_type: mcp
+    provider: xiaohongshu
+    fetched_at: "2026-07-08T10:00:00+08:00"
+    status: partial
+    next_cursor: "opaque-cursor"
+    items:
+      - raw_id: "xhs:note:123"
+        platform_item_id: "123"
+        title: "AI founder observation"
+        link: "https://www.xiaohongshu.com/explore/123"
+        author: "creator"
+        summary: "Short note text."
+        metrics:
+          likes: 120
+          comments: 8
+    errors:
+      - code: rate_limited
+        message: "Platform returned a temporary rate limit."
+        retryable: true
+        item_scope: source
+        raw_status: 429

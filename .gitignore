@@ -1,0 +1,8 @@
+.DS_Store
+.env
+Git_Trending.rtf
+data/adapter-output/*.json
+data/canonical-items/*.json
+data/signals/*.json
+data/dashboard/*
+data/store/**/*.jsonl

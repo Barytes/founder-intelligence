@@ -1,0 +1,97 @@
+version: 1
+
+user:
+  name: Founder Intelligence User
+  role: founder_researcher
+  description: >
+    Early-stage founder or investor who tracks AI, developer tools, startup
+    signals, funding, market sentiment, and workflow automation opportunities.
+
+goals:
+  - id: build_founder_daily_intelligence
+    title: Build Founder Daily Intelligence MVP
+    description: >
+      Validate whether a personal intelligence system can identify meaningful
+      market and technology changes, explain why they matter, and suggest
+      concrete follow-up questions.
+    keywords:
+      - founder intelligence
+      - daily intelligence
+      - decision support
+      - information aggregator
+      - research intelligence
+      - startup signals
+      - product market fit
+
+  - id: track_ai_startup_opportunities
+    title: Track AI startup opportunities
+    description: >
+      Watch AI tools, open-source projects, and market discussions for new
+      product opportunities, competitive threats, and timing signals.
+    keywords:
+      - AI agent
+      - agent
+      - MCP
+      - AI coding
+      - context
+      - workflow automation
+      - open source
+      - developer tools
+      - meeting assistant
+      - research assistant
+
+interests:
+  - AI agents
+  - AI coding
+  - MCP
+  - context engineering
+  - developer tools
+  - open-source projects
+  - investment research
+  - startup opportunities
+  - consumer attention
+  - market sentiment
+  - productivity tools
+
+watch_entities:
+  - OpenAI
+  - Anthropic
+  - Claude
+  - ChatGPT
+  - GitHub
+  - RSSHub
+
+risk_preferences:
+  style: balanced
+  notes:
+    - Prefer actionable signals over broad trend summaries.
+    - Flag hype, weak evidence, duplicate information, and noisy social signals.
+    - Keep original links so every recommendation can be checked.
+
+negative_preferences:
+  - celebrity gossip
+  - pure entertainment
+  - unrelated sports
+  - entertainment
+  - clickbait
+  - low-context hot takes
+  - 游戏
+  - 娱乐
+  - 明星
+  - 八卦
+  - 体育
+  - 台风
+  - 天气
+
+output_preferences:
+  language: zh-CN
+  tone: concise
+  default_top_n: 10
+  card_fields:
+    - title
+    - what_happened
+    - why_important
+    - why_relevant
+    - recommended_questions
+    - risks
+    - source

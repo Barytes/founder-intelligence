@@ -1,0 +1,221 @@
+version: 1
+
+supported_source_types:
+  - rss
+  - mcp
+  - api
+  - html
+
+fetch:
+  user_agent: founder-intelligence-ingestion/0.1
+  timeout_seconds: 20
+  retry_attempts: 3
+  retry_backoff_seconds:
+    - 5
+    - 30
+    - 120
+  max_items_per_source: 50
+  respect_source_refresh_interval: true
+
+canonical_item:
+  required_fields:
+    - id
+    - source_id
+    - source_type
+    - provider
+    - title
+    - fetched_at
+  recommended_fields:
+    - link
+    - platform_item_id
+    - guid
+    - published_at
+    - author
+    - summary
+    - content
+    - content_hash
+    - category
+    - tags
+    - metrics
+    - media
+    - raw
+
+normalization:
+  timezone: Asia/Shanghai
+  output_datetime: iso8601
+  strip_html: true
+  collapse_whitespace: true
+  trim_title: true
+  max_summary_chars: 500
+  max_content_chars: 20000
+  remove_tracking_params:
+    - utm_source
+    - utm_medium
+    - utm_campaign
+    - utm_term
+    - utm_content
+    - spm
+    - spm_id_from
+    - from
+    - share_source
+  preserve_raw_payload: true
+
+deduplication:
+  global_strategy:
+    - platform_item_id
+    - guid
+    - normalized_link
+    - source_id_title_published_at
+    - content_hash
+  content_hash:
+    algorithm: sha256
+    fields:
+      - title
+      - normalized_link
+      - summary
+      - content
+  provider_overrides:
+    rss:
+      - guid
+      - normalized_link
+      - source_id_title_published_at
+      - content_hash
+    xiaohongshu:
+      - platform_item_id
+      - normalized_link
+      - author_title_content_hash
+    wechat:
+      - platform_item_id
+      - normalized_link
+      - source_id_title_published_at
+    github:
+      - guid
+      - normalized_link
+      - platform_item_id
+      - content_hash
+
+field_mappings:
+  rss:
+    platform_item_id: item.guid
+    guid: item.guid
+    title: item.title
+    link: item.link
+    published_at:
+      - item.isoDate
+      - item.pubDate
+      - item.date
+    author:
+      - item.creator
+      - item.author
+    summary:
+      - item.contentSnippet
+      - item.description
+    content:
+      - item.content
+      - item.description
+    categories: item.categories
+
+  xiaohongshu:
+    platform_item_id:
+      - note_id
+      - id
+    title:
+      - title
+      - display_title
+    link:
+      - note_url
+      - url
+    published_at:
+      - publish_time
+      - created_at
+    author:
+      - user.nickname
+      - author.nickname
+      - nickname
+    summary:
+      - desc
+      - content
+    content:
+      - desc
+      - content
+    metrics:
+      likes:
+        - liked_count
+        - likes
+      comments:
+        - comment_count
+        - comments
+      collects:
+        - collected_count
+        - collects
+    media:
+      images:
+        - images
+        - image_list
+      video_url:
+        - video_url
+        - video
+
+  wechat:
+    platform_item_id:
+      - biz_mid_idx
+      - article_id
+      - mid
+    title: title
+    link:
+      - article_url
+      - url
+    published_at:
+      - publish_time
+      - published_at
+    author:
+      - account_name
+      - author
+    summary:
+      - digest
+      - summary
+    content:
+      - content
+      - html
+    source_account:
+      - account_name
+      - biz
+
+  github:
+    platform_item_id:
+      - id
+      - guid
+    title: title
+    link: link
+    published_at:
+      - pubDate
+      - published_at
+      - updated_at
+    author:
+      - author
+      - creator
+      - owner
+    summary:
+      - description
+      - contentSnippet
+    content:
+      - content
+      - description
+
+quality_gates:
+  drop_item_when:
+    title_empty: true
+    duplicate: true
+  allow_item_when:
+    link_empty: true
+    published_at_empty: true
+  flag_item_when:
+    content_empty: true
+    published_at_empty: true
+    author_empty: true
+
+error_handling:
+  record_failed_fetch: true
+  record_failed_item_parse: true
+  disable_source_after_consecutive_failures: 10
+  keep_last_successful_fetch: true

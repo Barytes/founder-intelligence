@@ -1,0 +1,1313 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Founder Intelligence · 信息源看板</title>
+  <style>
+    /*
+      Huashu assumptions:
+      - This is a local, high-fidelity HTML dashboard for reviewing the information aggregator.
+      - Data comes from the project artifacts: config/sources.yml, adapter output, canonical items, and signals.
+      - No external fonts or images are loaded; the visual system favors dense operational clarity.
+      - This file is a prototype/inspection surface, not the production app shell.
+    */
+    :root {
+      --paper: oklch(0.97 0.018 83);
+      --paper-2: oklch(0.93 0.018 83);
+      --ink: oklch(0.19 0.018 230);
+      --muted: oklch(0.47 0.018 230);
+      --line: oklch(0.83 0.018 83);
+      --panel: oklch(0.99 0.006 83);
+      --green: oklch(0.48 0.09 172);
+      --green-soft: oklch(0.92 0.044 172);
+      --rust: oklch(0.55 0.13 42);
+      --rust-soft: oklch(0.91 0.045 42);
+      --blue: oklch(0.45 0.09 245);
+      --blue-soft: oklch(0.91 0.042 245);
+      --yellow: oklch(0.72 0.11 88);
+      --yellow-soft: oklch(0.94 0.05 88);
+      --danger: oklch(0.48 0.15 28);
+      --shadow: 0 18px 50px rgba(32, 35, 31, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      overflow-x: hidden;
+      background:
+        linear-gradient(90deg, color-mix(in oklch, var(--line) 34%, transparent) 1px, transparent 1px),
+        linear-gradient(180deg, color-mix(in oklch, var(--line) 28%, transparent) 1px, transparent 1px),
+        var(--paper);
+      background-size: 48px 48px;
+      color: var(--ink);
+      font-family: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.55;
+    }
+
+    button, input, select {
+      font: inherit;
+    }
+
+    .shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+      min-width: 0;
+      padding: 28px 22px;
+      background: color-mix(in oklch, var(--panel) 90%, transparent);
+      border-right: 1px solid var(--line);
+    }
+
+    .brand-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .brand-mark {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--ink);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2px;
+      padding: 2px;
+    }
+
+    .brand-mark span {
+      background: var(--ink);
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      text-wrap: balance;
+      letter-spacing: 0;
+      overflow-wrap: anywhere;
+    }
+
+    h1 {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(30px, 4vw, 56px);
+      line-height: 0.98;
+      font-weight: 500;
+      max-width: 780px;
+    }
+
+    .sidebar h2 {
+      font-family: Georgia, "Times New Roman", serif;
+      font-weight: 500;
+      font-size: 28px;
+      line-height: 1.05;
+      margin-bottom: 10px;
+    }
+
+    .sidebar-note {
+      color: var(--muted);
+      font-size: 14px;
+      margin: 0 0 22px;
+      text-wrap: pretty;
+      overflow-wrap: anywhere;
+    }
+
+    .source-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .context-panel {
+      margin-top: 22px;
+      padding-top: 20px;
+      border-top: 1px solid var(--line);
+    }
+
+    .context-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .context-head h3 {
+      font-size: 16px;
+      line-height: 1.2;
+    }
+
+    .context-head p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .context-area {
+      width: 100%;
+      min-height: 188px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      padding: 11px;
+      font: 12px/1.55 "JetBrains Mono", "Menlo", monospace;
+      outline: none;
+    }
+
+    .context-area:focus {
+      border-color: var(--green);
+    }
+
+    .context-actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 9px;
+    }
+
+    .context-actions button {
+      min-height: 36px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 140ms ease, border-color 140ms ease;
+    }
+
+    .context-actions button:hover {
+      border-color: color-mix(in oklch, var(--green) 55%, var(--line));
+      background: var(--green-soft);
+    }
+
+    .context-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      margin-top: 10px;
+      color: var(--ink);
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .context-toggle input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--green);
+    }
+
+    .context-toggle.disabled {
+      color: var(--muted);
+      cursor: not-allowed;
+    }
+
+    .context-terms {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      min-height: 30px;
+      margin-top: 9px;
+    }
+
+    .context-status,
+    .muted-note {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .source-card {
+      position: relative;
+      width: 100%;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      padding: 12px;
+      text-align: left;
+      cursor: pointer;
+      min-height: 112px;
+      display: grid;
+      gap: 9px;
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+    }
+
+    .source-card:hover,
+    .source-card.active {
+      transform: translateY(-1px);
+      border-color: color-mix(in oklch, var(--green) 55%, var(--line));
+      background: var(--green-soft);
+    }
+
+    .source-card.disabled {
+      opacity: 0.55;
+    }
+
+    .source-card.empty {
+      border-style: dashed;
+      cursor: default;
+      background: color-mix(in oklch, var(--panel) 72%, var(--paper-2));
+    }
+
+    .source-card.empty:hover {
+      transform: none;
+      border-color: var(--line);
+      background: color-mix(in oklch, var(--panel) 72%, var(--paper-2));
+    }
+
+    .source-name {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-weight: 700;
+      line-height: 1.25;
+      padding-right: 28px;
+    }
+
+    .source-count {
+      font-family: Georgia, "Times New Roman", serif;
+      font-weight: 500;
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .source-description {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      margin: 0;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-wrap: pretty;
+    }
+
+    .source-remove {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 26px;
+      height: 26px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      background: color-mix(in oklch, var(--panel) 80%, transparent);
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .source-remove:hover {
+      color: var(--danger);
+      border-color: color-mix(in oklch, var(--danger) 50%, var(--line));
+      background: color-mix(in oklch, var(--rust-soft) 70%, white);
+    }
+
+    .source-mini-action {
+      min-height: 24px;
+      border: 1px solid var(--line);
+      background: color-mix(in oklch, white 55%, transparent);
+      color: var(--ink);
+      font-size: 12px;
+      cursor: pointer;
+      padding: 2px 8px;
+    }
+
+    .source-mini-action:hover {
+      border-color: color-mix(in oklch, var(--green) 55%, var(--line));
+      background: var(--green-soft);
+    }
+
+    .source-draft-area {
+      width: 100%;
+      min-height: 86px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      padding: 10px;
+      font: 12px/1.5 "JetBrains Mono", "Menlo", monospace;
+      outline: none;
+    }
+
+    .source-draft-area:focus {
+      border-color: var(--green);
+    }
+
+    .source-draft-actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .source-draft-actions button {
+      min-height: 34px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .source-draft-actions button:hover {
+      border-color: color-mix(in oklch, var(--green) 55%, var(--line));
+      background: var(--green-soft);
+    }
+
+    .source-ai-output {
+      border: 1px solid color-mix(in oklch, var(--blue) 45%, var(--line));
+      background: var(--blue-soft);
+      color: var(--ink);
+      padding: 10px;
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      text-wrap: pretty;
+    }
+
+    .source-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 9px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 3px 8px;
+      border: 1px solid var(--line);
+      background: color-mix(in oklch, white 55%, transparent);
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .pill.ok { color: var(--green); border-color: color-mix(in oklch, var(--green) 55%, var(--line)); background: var(--green-soft); }
+    .pill.warn { color: var(--rust); border-color: color-mix(in oklch, var(--rust) 55%, var(--line)); background: var(--rust-soft); }
+    .pill.blue { color: var(--blue); border-color: color-mix(in oklch, var(--blue) 55%, var(--line)); background: var(--blue-soft); }
+
+    .content {
+      padding: 34px;
+      max-width: 1560px;
+      width: 100%;
+      min-width: 0;
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 18px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .topbar h1 {
+      font-size: clamp(30px, 4vw, 48px);
+    }
+
+    .summary-strip {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+      max-width: 560px;
+    }
+
+    .section {
+      margin-top: 24px;
+    }
+
+    .compact-section {
+      margin-top: 0;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 12px;
+    }
+
+    .section-head h2 {
+      font-family: Georgia, "Times New Roman", serif;
+      font-weight: 500;
+      font-size: 30px;
+    }
+
+    .section-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: minmax(240px, 1fr) 180px 180px;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .toolbar input,
+    .toolbar select {
+      height: 44px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      padding: 0 12px;
+      outline: none;
+    }
+
+    .toolbar input:focus,
+    .toolbar select:focus {
+      border-color: var(--green);
+    }
+
+    .item-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+      gap: 14px;
+    }
+
+    .items {
+      display: grid;
+      gap: 10px;
+    }
+
+    .item-card {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      padding: 14px;
+      cursor: pointer;
+      transition: border-color 140ms ease, background 140ms ease;
+    }
+
+    .item-card:hover,
+    .item-card.active {
+      border-color: color-mix(in oklch, var(--blue) 55%, var(--line));
+      background: var(--blue-soft);
+    }
+
+    .item-card.context-match {
+      border-left: 4px solid var(--green);
+    }
+
+    .item-card h3 {
+      font-size: 16px;
+      line-height: 1.35;
+      margin-bottom: 9px;
+    }
+
+    .item-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-wrap: pretty;
+    }
+
+    .item-detail {
+      position: sticky;
+      top: 24px;
+      max-height: calc(100vh - 48px);
+      overflow: auto;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .item-detail h2 {
+      font-family: Georgia, "Times New Roman", serif;
+      font-weight: 500;
+      line-height: 1.08;
+      font-size: 32px;
+      margin-bottom: 12px;
+    }
+
+    .detail-body {
+      color: var(--muted);
+      font-size: 15px;
+      white-space: pre-wrap;
+      text-wrap: pretty;
+    }
+
+    .context-match-box {
+      margin: 14px 0;
+      padding: 12px;
+      border: 1px solid color-mix(in oklch, var(--green) 45%, var(--line));
+      background: var(--green-soft);
+    }
+
+    .context-match-box strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+
+    .detail-link {
+      display: inline-flex;
+      min-height: 42px;
+      align-items: center;
+      margin-top: 16px;
+      color: var(--ink);
+      text-decoration: none;
+      border-bottom: 1px solid var(--ink);
+      font-weight: 700;
+    }
+
+    .empty-state {
+      border: 1px dashed var(--line);
+      padding: 28px;
+      color: var(--muted);
+      background: color-mix(in oklch, var(--panel) 70%, transparent);
+    }
+
+    @media (max-width: 1180px) {
+      .shell { grid-template-columns: 1fr; }
+      .sidebar {
+        position: relative;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .source-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .topbar,
+      .item-layout {
+        grid-template-columns: 1fr;
+      }
+      .topbar {
+        display: grid;
+        align-items: start;
+      }
+      .summary-strip {
+        justify-content: flex-start;
+      }
+      .item-detail {
+        position: relative;
+        top: auto;
+        max-height: none;
+      }
+    }
+
+    @media (max-width: 820px) {
+      .content { padding: 22px 16px; }
+      .source-list,
+      .toolbar {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand-kicker">
+        <span class="brand-mark"><span></span><span></span><span></span><span></span></span>
+        Local Intelligence
+      </div>
+      <h2>信息源</h2>
+      <p class="sidebar-note">卡片可选择、删减或新增；空白卡片用于描述想追踪的信息源。</p>
+      <div class="source-list" id="sourceList"></div>
+      <section class="context-panel" aria-label="user.md">
+        <div class="context-head">
+          <div>
+            <h3>user.md</h3>
+            <p>关注对象与关键词</p>
+          </div>
+          <span class="pill blue" id="userTermCount">0 词</span>
+        </div>
+        <textarea class="context-area" id="userMdInput" spellcheck="false"></textarea>
+        <div class="context-actions">
+          <button type="button" id="saveUserMd">保存</button>
+          <button type="button" id="resetUserMd">重置</button>
+          <button type="button" id="downloadUserMd">下载</button>
+        </div>
+        <label class="context-toggle" id="contextToggleLabel">
+          <input type="checkbox" id="contextOnlyToggle">
+          <span>只看 user.md 相关</span>
+        </label>
+        <div class="context-terms" id="userTermPreview"></div>
+        <div class="context-status" id="userMdStatus"></div>
+      </section>
+    </aside>
+
+    <main class="content">
+      <section class="topbar">
+        <div>
+          <div class="brand-kicker">Founder Intelligence / Source Viewer</div>
+          <h1>信息源与抓取信息</h1>
+        </div>
+        <div class="summary-strip" id="summaryStrip"></div>
+      </section>
+
+      <section class="section compact-section">
+        <div class="section-head">
+          <div>
+            <h2>抓取信息</h2>
+            <p>按来源、分类、关键词筛选；点任意条目查看详情。</p>
+          </div>
+        </div>
+        <div class="toolbar">
+          <input id="searchInput" type="search" placeholder="搜索标题、摘要、标签">
+          <select id="sourceFilter"></select>
+          <select id="categoryFilter"></select>
+        </div>
+        <div class="item-layout">
+          <div class="items" id="itemList"></div>
+          <article class="item-detail" id="itemDetail"></article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    window.DASHBOARD_DATA = {"generated_at":"2026-07-08T13:56:21+08:00","adapter_run_id":"rss-fetch-20260708T015345Z-9fbd76fd","canonical_run_id":"rss-fetch-20260708T015345Z-9fbd76fd","summary":{"sources":3,"enabled_sources":3,"fetched_sources":3,"raw_items":15,"canonical_items":15,"dropped_items":0,"adapter_status":{"ok":3}},"breakdowns":{"by_source":[{"id":"github-trending-daily","name":"GitHub Trending Daily","raw":5,"canonical":5,"status":"ok"},{"id":"zhihu-hot","name":"Zhihu Hot","raw":5,"canonical":5,"status":"ok"},{"id":"bilibili-popular-all","name":"Bilibili Popular All","raw":5,"canonical":5,"status":"ok"}],"by_category":{"consumer_attention":5,"developer_trends":5,"market_discussion":5},"by_provider":{"bilibili":5,"github":5,"zhihu":5}},"sources":[{"id":"github-trending-daily","name":"GitHub Trending Daily","enabled":true,"source_type":"rss","provider":"github","fetcher":"rsshub","priority":"high","category":"developer_trends","tags":["open-source","developer-tools","startup-signals"],"schedule":{"refresh_interval_minutes":30},"connection":{"rss_url":"http://localhost:1200/github/trending/daily/any","rsshub_route":"/github/trending/daily/any"},"status":"ok","fetched_at":"2026-07-08T09:53:45+08:00","raw_count":5,"canonical_count":5,"error_count":0,"errors":[],"notes":"GitHub Trending requires GITHUB_ACCESS_TOKEN in .env."},{"id":"zhihu-hot","name":"Zhihu Hot","enabled":true,"source_type":"rss","provider":"zhihu","fetcher":"rsshub","priority":"medium","category":"market_discussion","tags":["china-market","public-opinion","trending"],"schedule":{"refresh_interval_minutes":20},"connection":{"rss_url":"http://localhost:1200/zhihu/hot","rsshub_route":"/zhihu/hot"},"status":"ok","fetched_at":"2026-07-08T09:53:48+08:00","raw_count":5,"canonical_count":5,"error_count":0,"errors":[],"notes":null},{"id":"bilibili-popular-all","name":"Bilibili Popular All","enabled":true,"source_type":"rss","provider":"bilibili","fetcher":"rsshub","priority":"medium","category":"consumer_attention","tags":["video","creator-economy","china-market"],"schedule":{"refresh_interval_minutes":30},"connection":{"rss_url":"http://localhost:1200/bilibili/popular/all","rsshub_route":"/bilibili/popular/all"},"status":"ok","fetched_at":"2026-07-08T09:53:48+08:00","raw_count":5,"canonical_count":5,"error_count":0,"errors":[],"notes":null}],"items":[{"id":"98316bfa7978d2a03587f8c858d2afdefeb8af371c0378f67a57ac9add454752","source_id":"github-trending-daily","source_name":"GitHub Trending Daily","provider":"github","category":"developer_trends","priority":"high","title":"MadsLorentzen/ai-job-search","summary":"AI-powered job application framework built on Claude Code. Fork it, fill in your profile, and let Claude evaluate jobs, tailor CVs, write cover letters, and prepare you for interviews. Language: TypeScript Stars: 11098 Forks: 3704","content":"AI-powered job application framework built on Claude Code. Fork it, fill in your profile, and let Claude evaluate jobs, tailor CVs, write cover letters, and prepare you for interviews. Language: TypeScript Stars: 11098 Forks: 3704","link":"https://github.com/MadsLorentzen/ai-job-search","published_at":null,"fetched_at":"2026-07-08T09:53:45+08:00","author":"MadsLorentzen","tags":["open-source","developer-tools","startup-signals"],"quality_flags":["published_at_empty"]},{"id":"8a996017c15f4facceb5cfa1f78f085840c2cada67fbdac2a1710afc9b794cd5","source_id":"github-trending-daily","source_name":"GitHub Trending Daily","provider":"github","category":"developer_trends","priority":"high","title":"Zackriya-Solutions/meetily","summary":"Privacy first, AI meeting assistant with 4x faster Parakeet/Whisper live transcription, speaker diarization, and Ollama summarization built on Rust. 100% local processing. no cloud required. Meetily (Meetly Ai - https://meetily.ai) is the #1 Self-hosted, Open-source Ai meeting note taker for macOS & Windows. Language: Rust Stars: 20796 Forks: 2080","content":"Privacy first, AI meeting assistant with 4x faster Parakeet/Whisper live transcription, speaker diarization, and Ollama summarization built on Rust. 100% local processing. no cloud required. Meetily (Meetly Ai - https://meetily.ai) is the #1 Self-hosted, Open-source Ai meeting note taker for macOS & Windows. Language: Rust Stars: 20796 Forks: 2080","link":"https://github.com/Zackriya-Solutions/meetily","published_at":null,"fetched_at":"2026-07-08T09:53:45+08:00","author":"Zackriya-Solutions","tags":["open-source","developer-tools","startup-signals"],"quality_flags":["published_at_empty"]},{"id":"fb199872dab389885ea94cebef389dd813ac8e8af6ea3cd7ea3c6f8d8b1e7630","source_id":"github-trending-daily","source_name":"GitHub Trending Daily","provider":"github","category":"developer_trends","priority":"high","title":"addyosmani/agent-skills","summary":"Production-grade engineering skills for AI coding agents. Language: JavaScript Stars: 72203 Forks: 7820","content":"Production-grade engineering skills for AI coding agents. Language: JavaScript Stars: 72203 Forks: 7820","link":"https://github.com/addyosmani/agent-skills","published_at":null,"fetched_at":"2026-07-08T09:53:45+08:00","author":"addyosmani","tags":["open-source","developer-tools","startup-signals"],"quality_flags":["published_at_empty"]},{"id":"5d6a303b4536ca7de9d523b972bb8391250345b5bd985e84356b4e8959a9e367","source_id":"github-trending-daily","source_name":"GitHub Trending Daily","provider":"github","category":"developer_trends","priority":"high","title":"ruvnet/RuView","summary":"π RuView turns commodity WiFi signals into real-time spatial intelligence, vital sign monitoring, and presence detection — all without a single pixel of video. Language: Rust Stars: 78532 Forks: 10565","content":"π RuView turns commodity WiFi signals into real-time spatial intelligence, vital sign monitoring, and presence detection — all without a single pixel of video. Language: Rust Stars: 78532 Forks: 10565","link":"https://github.com/ruvnet/RuView","published_at":null,"fetched_at":"2026-07-08T09:53:45+08:00","author":"ruvnet","tags":["open-source","developer-tools","startup-signals"],"quality_flags":["published_at_empty"]},{"id":"fce3f7c2fe95094d05d5c1596b8000b8fa5f33816ed513e6d860964e2d5f55be","source_id":"github-trending-daily","source_name":"GitHub Trending Daily","provider":"github","category":"developer_trends","priority":"high","title":"asgeirtj/system_prompts_leaks","summary":"Extracted system prompts from Anthropic - Claude Fable 5, Opus 4.8, Claude Code, Claude Design. OpenAI - ChatGPT 5.5 Thinking, GPT 5.5 Instant, Codex. Google - Gemini 3.5 Flash, 3.1 Pro, Antigravity. xAI - Grok, Cursor, Copilot, VS Code, Perplexity, and more. Updated regularly. Language: JavaScript Stars: 53051 Forks: 8646","content":"Extracted system prompts from Anthropic - Claude Fable 5, Opus 4.8, Claude Code, Claude Design. OpenAI - ChatGPT 5.5 Thinking, GPT 5.5 Instant, Codex. Google - Gemini 3.5 Flash, 3.1 Pro, Antigravity. xAI - Grok, Cursor, Copilot, VS Code, Perplexity, and more. Updated regularly. Language: JavaScript Stars: 53051 Forks: 8646","link":"https://github.com/asgeirtj/system_prompts_leaks","published_at":null,"fetched_at":"2026-07-08T09:53:45+08:00","author":"asgeirtj","tags":["open-source","developer-tools","startup-signals"],"quality_flags":["published_at_empty"]},{"id":"082edda1711117b5e2d4ed1569e24071d3d64f94d7411fc8d3b3c3b5e338f4b4","source_id":"zhihu-hot","source_name":"Zhihu Hot","provider":"zhihu","category":"market_discussion","priority":"medium","title":"如何看待2026年世界杯1/8阿根廷对埃及比赛最后5分钟内，主裁判不吹罚阿根廷队禁区犯规？","summary":"镜头中阿根廷队明显犯规动作导致埃及球员倒地，主裁判却视而不见并拒绝埃及队教练组回看vcr要求，反而给埃及队主教练和助理教练各一张黄牌","content":"镜头中阿根廷队明显犯规动作导致埃及球员倒地，主裁判却视而不见并拒绝埃及队教练组回看vcr要求，反而给埃及队主教练和助理教练各一张黄牌","link":"https://www.zhihu.com/question/2058011125409699747","published_at":"2026-07-07T18:14:48+00:00","fetched_at":"2026-07-08T09:53:48+08:00","author":null,"tags":["china-market","public-opinion","trending"],"quality_flags":["author_empty"]},{"id":"d51ffc564dedb56321570ea5bb4bc3a07ec18c61ea0a9fed211939a77b33b57f","source_id":"zhihu-hot","source_name":"Zhihu Hot","provider":"zhihu","category":"market_discussion","priority":"medium","title":"证监会对安某编造传播涉中公教育虚假信息立案调查，一句低俗赌约，中公教育离奇涨停，其将承担哪些法律责任？","summary":"证监会对安某编造传播涉中公教育虚假信息立案调查 7月7日，证监会现已查明，7月2日，安某（男，网名：南京路宝宝总）编造传播涉及上市公司中公教育的虚假误导性信息，严重扰乱证券市场秩序，严重破坏公序良俗，涉嫌违反证券法，我会决定对安某立案调查。下一步，我会将在全面调查的基础上严肃追究相关当事人的违法责任。涉嫌犯罪的，依法移送公安机关。 网络绝非法外之地。编造传播虚假误导性信息是证券期货法律法规严格禁止的行为，历来是证监会打击重点。我会将继续对编造传播证券期货虚假误导性信息行为严密盯防、快速反应、严肃查处，全力维护资本市场信息传播秩序。 央视网评：斩断“低俗赌约” 莫把股市当赌场 “央视网评”公众号7日午间发文称，近日，中公教育、共进股份等股票因股吧平台内的“低俗赌约”，引发股民的网络狂欢，前者4天内2个涨停，后者亦有1个涨停，接连上演了荒诞的股价异动戏码。这场靠“低俗赌约”撬动的股价异动，在监管的果断介入下被及时按下“暂停键”。 此类“低俗赌约”具有极强的夸大性与误导性：“一年20倍”等纯属夸张，低俗的“钩子”在传播过程中更被强行关联“有色”、AI硬件等热点概念，严重干扰投资者决策。这种流","content":"证监会对安某编造传播涉中公教育虚假信息立案调查 7月7日，证监会现已查明，7月2日，安某（男，网名：南京路宝宝总）编造传播涉及上市公司中公教育的虚假误导性信息，严重扰乱证券市场秩序，严重破坏公序良俗，涉嫌违反证券法，我会决定对安某立案调查。下一步，我会将在全面调查的基础上严肃追究相关当事人的违法责任。涉嫌犯罪的，依法移送公安机关。 网络绝非法外之地。编造传播虚假误导性信息是证券期货法律法规严格禁止的行为，历来是证监会打击重点。我会将继续对编造传播证券期货虚假误导性信息行为严密盯防、快速反应、严肃查处，全力维护资本市场信息传播秩序。 央视网评：斩断“低俗赌约” 莫把股市当赌场 “央视网评”公众号7日午间发文称，近日，中公教育、共进股份等股票因股吧平台内的“低俗赌约”，引发股民的网络狂欢，前者4天内2个涨停，后者亦有1个涨停，接连上演了荒诞的股价异动戏码。这场靠“低俗赌约”撬动的股价异动，在监管的果断介入下被及时按下“暂停键”。 此类“低俗赌约”具有极强的夸大性与误导性：“一年20倍”等纯属夸张，低俗的“钩子”在传播过程中更被强行关联“有色”、AI硬件等热点概念，严重干扰投资者决策。这种流量炒作比股市“小作文”更为隐蔽：甚至无需捏造具体的利好谎言，只要足够低俗猎奇，猎奇心理和算法推荐机制就会替其将“误导性”放大。 由此引发的股价异动，缺乏基本面支撑，纯粹是经由网络扩散，依靠擦边煽动情绪，诱发散户的羊群效应。这种乱象，与监管层严打“炒小炒差”、打击利用网络流量操纵股价的政策取向背道而驰。 投资者也要更清醒：在拿股吧赌约当买入逻辑之前，应先审视自身交易行为是否理性，是否会触碰红线。价格发现是资本市场的核心功能，容不下半点低俗流量的绑架。摒弃博傻心理，回归理性投资，才是长久之道。","link":"https://www.zhihu.com/question/2057930097039090211","published_at":"2026-07-07T12:52:49+00:00","fetched_at":"2026-07-08T09:53:48+08:00","author":null,"tags":["china-market","public-opinion","trending"],"quality_flags":["author_empty"]},{"id":"63e6db5ef3c7544c84770701aab7bac139dc1817ebcd37ec399973b83f57e9d8","source_id":"zhihu-hot","source_name":"Zhihu Hot","provider":"zhihu","category":"market_discussion","priority":"medium","title":"《功夫女足》预售破 2000 万，你预测影片票房最终能到多少？会带热暑期档市场大盘吗？","summary":"开启预售后 8 小时破 1000 万，27 小时左右破 2000 万","content":"开启预售后 8 小时破 1000 万，27 小时左右破 2000 万","link":"https://www.zhihu.com/question/2057867397193626074","published_at":"2026-07-07T08:43:40+00:00","fetched_at":"2026-07-08T09:53:48+08:00","author":null,"tags":["china-market","public-opinion","trending"],"quality_flags":["author_empty"]},{"id":"1a7d9b6e8f938f0b4afd9e5b740109a5a1d4892a1f4b33a7ca305009e13e6003","source_id":"zhihu-hot","source_name":"Zhihu Hot","provider":"zhihu","category":"market_discussion","priority":"medium","title":"曝 TikTok 全球裁员，网传印尼将裁 90%，裁员出于哪些原因？这一架构调整可能带来哪些影响？","summary":"7月6日消息，据straitstimes报道，TikTok 正在进行新一轮全球裁员，其中包括削减其信任与安全团队的职位。这已经是这家社交媒体巨头连续第二年缩减负责内容审核和平台安全的员工队伍。 针对《海峡时报》的询问，TikTok 发言人表示：“我们正在继续进行重组，以加强我们全球运营模式的信任和安全，包括将部分员工集中在关键运营中心，并改进我们的工作方式，以确保团队保持可扩展性和敏捷性。” TikTok 没有回应有关其新加坡办事处受影响员工人数的询问。 该公司并未将此次裁员归咎于其对人工智能内容审核的推进，但表示将继续“通过最新的技术创新来提升平台安全”。 此次裁员是TikTok两年内第二次对其信任与安全团队进行裁员。 2025年2月， TikTok在新加坡裁员至少12人，这是其旨在提高运营效率并使员工队伍与业务需求相匹配的内部重组计划的一部分。 TikTok在内部邮件中透露，都柏林欧洲中心目前雇佣员工总数超过2000人，此次裁员占比约为10%-15%，受冲击最大的正是信任与安全部门。 此外，TikTok还在印尼进行了裁员，受影响的员工来自电商平台Tokopedia 。 2024年，","content":"7月6日消息，据straitstimes报道，TikTok 正在进行新一轮全球裁员，其中包括削减其信任与安全团队的职位。这已经是这家社交媒体巨头连续第二年缩减负责内容审核和平台安全的员工队伍。 针对《海峡时报》的询问，TikTok 发言人表示：“我们正在继续进行重组，以加强我们全球运营模式的信任和安全，包括将部分员工集中在关键运营中心，并改进我们的工作方式，以确保团队保持可扩展性和敏捷性。” TikTok 没有回应有关其新加坡办事处受影响员工人数的询问。 该公司并未将此次裁员归咎于其对人工智能内容审核的推进，但表示将继续“通过最新的技术创新来提升平台安全”。 此次裁员是TikTok两年内第二次对其信任与安全团队进行裁员。 2025年2月， TikTok在新加坡裁员至少12人，这是其旨在提高运营效率并使员工队伍与业务需求相匹配的内部重组计划的一部分。 TikTok在内部邮件中透露，都柏林欧洲中心目前雇佣员工总数超过2000人，此次裁员占比约为10%-15%，受冲击最大的正是信任与安全部门。 此外，TikTok还在印尼进行了裁员，受影响的员工来自电商平台Tokopedia 。 2024年，在印尼禁止社交媒体平台上的在线购物后， TikTok的母公司字节跳动收购了Tokopedia 。 此前有报道称，TikTok旗下电商平台Tokopedia正在进行新一轮裁员，作为组织架构重组的一部分。 CNBC印尼频道报道称，该公司技术部门已有超过450名员工被裁，而其他印尼媒体则援引消息称，此次裁员已使Tokopedia的员工人数减少至约10%，而2024年1月TikTok从GoTo手中收购该公司时，其员工总数约为2500人。 TikTok并未证实裁员规模，但表示正在重组其研发部门，以支持长期可持续增长。 TikTok 发言人表示：“我们正在调整研发组织，使其专注于能够推动我们业务、创作者社区和平台上的商家实现可持续长期增长的领域。” 该公司承认裁员是一个艰难的决定，并表示将在过渡期间为受影响的员工提供支持。 TikTok 还表示，将继续致力于投资 Tokopedia，以改善用户和商家的平台体验，同时继续支持印尼本土企业和更广泛的电子商务生态系统。 彭博社7月2日报道称，TikTok在爱尔兰都柏林裁减了约300个工作岗位。 与此同时，7月1日，马来西亚几名受影响的员工在社交媒体上分享了他们的经历。 字节跳动的一位人工智能质量保证专家在7月2日于LinkedIn上发帖描述了吉隆坡办公室的混乱状况。 “还没进办公室门禁卡就被吊销了，保安一次要护送三个人出去…他们不停地检查员工进出大楼的物品。”她说道，并补充说，被裁员工被当作“垃圾”对待。目前尚不清楚她是否也被裁员。 创意媒体与出版工会（CMPU）指出，虽然TikTok新加坡公司并非工会企业，但其员工中有工会成员。工会敦促受影响的工会成员通过电子邮件联系CMPU寻求 帮助。 “在裁员行动中，如果个别工会成员在非工会公司工作，全国职工总会的附属工会或协会将向受裁员影响的个别工会成员提供援助。”声明中写道。（蓝洞新消费编译） TikTok开启全球裁员：传印尼裁90%","link":"https://www.zhihu.com/question/2057807463441593129","published_at":"2026-07-07T04:45:31+00:00","fetched_at":"2026-07-08T09:53:48+08:00","author":null,"tags":["china-market","public-opinion","trending"],"quality_flags":["author_empty"]},{"id":"e37f725e44c4a67fb18bb22cc9286eedbd642d379064850048de35e85513213e","source_id":"zhihu-hot","source_name":"Zhihu Hot","provider":"zhihu","category":"market_discussion","priority":"medium","title":"世界杯 1/8 决赛，瑞士 4-3 哥伦比亚，如何评价本场比赛？","summary":"相关问题巴洛特利在指控瑞士足协腐败后再次陷入争议之中，你对此事有何看法？","content":"相关问题巴洛特利在指控瑞士足协腐败后再次陷入争议之中，你对此事有何看法？","link":"https://www.zhihu.com/question/2057777873222737980","published_at":"2026-07-07T02:47:56+00:00","fetched_at":"2026-07-08T09:53:48+08:00","author":null,"tags":["china-market","public-opinion","trending"],"quality_flags":["author_empty"]},{"id":"9b4ac69f41bb67f2051b001bf399b3df9f8695bb0850e27024d552a299d5b2c2","source_id":"bilibili-popular-all","source_name":"Bilibili Popular All","provider":"bilibili","category":"consumer_attention","priority":"medium","title":"你敢放我进来吗？？「谁是伪人」？？！","summary":"题材来源：北极熊 封面参考了伪人游戏 实际不会有什么恐怖内容 但是小橙子姐的皮肤真的好合适哈哈哈 因为当时遇到了一些不能确定是否是bug的内容 所以最后只保留了两局 房主的镜头相对于其他人会多一些 希望大家能谅解！ 录制了好长时间 希望大家会喜欢","content":"题材来源：北极熊 封面参考了伪人游戏 实际不会有什么恐怖内容 但是小橙子姐的皮肤真的好合适哈哈哈 因为当时遇到了一些不能确定是否是bug的内容 所以最后只保留了两局 房主的镜头相对于其他人会多一些 希望大家能谅解！ 录制了好长时间 希望大家会喜欢","link":"https://www.bilibili.com/video/BV1faTd6VEqH","published_at":"2026-07-08T00:00:00+00:00","fetched_at":"2026-07-08T09:53:48+08:00","author":"大炒面制造者Cen","tags":["video","creator-economy","china-market"],"quality_flags":[]},{"id":"707da0287ce8d15d4b13d08f590019f1be3af09fb96ebc93634fab45ae0ffd1c","source_id":"bilibili-popular-all","source_name":"Bilibili Popular All","provider":"bilibili","category":"consumer_attention","priority":"medium","title":"登陆几率再扩大：超强台风巴威将再迎巅峰，护国神山这次有点挡不住","summary":"7月7日凌晨起，超强台风巴威的台风眼突然开始变模糊，核心云团上出现裂缝。这标志着巴威第二次眼壁置换的开始。正如我们之前节目所说，眼壁置换是台风的结构调整，类似螃蟹脱壳，脱壳的过程是痛苦的，但脱壳成功一次螃蟹长大一次。在巴威的第二次眼壁置换中，它的强度确实从17级以上掉到了16级，但与此同时，巴威的台风眼、核心云团和风圈都在剧烈扩大。7月7日晚上，一个直径高达100公里的巨型台风眼已经成型，巴威的烈风圈直径也已经超过了1000公里，已经是堪比2018年超强台风山竹的巨型超强台风。 而接下来，巴威将进入菲律宾","content":"7月7日凌晨起，超强台风巴威的台风眼突然开始变模糊，核心云团上出现裂缝。这标志着巴威第二次眼壁置换的开始。正如我们之前节目所说，眼壁置换是台风的结构调整，类似螃蟹脱壳，脱壳的过程是痛苦的，但脱壳成功一次螃蟹长大一次。在巴威的第二次眼壁置换中，它的强度确实从17级以上掉到了16级，但与此同时，巴威的台风眼、核心云团和风圈都在剧烈扩大。7月7日晚上，一个直径高达100公里的巨型台风眼已经成型，巴威的烈风圈直径也已经超过了1000公里，已经是堪比2018年超强台风山竹的巨型超强台风。 而接下来，巴威将进入菲律宾","link":"https://www.bilibili.com/video/BV1mkMh6WEPw","published_at":"2026-07-07T14:44:27+00:00","fetched_at":"2026-07-08T09:53:48+08:00","author":"中气爱","tags":["video","creator-economy","china-market"],"quality_flags":[]},{"id":"ac2b74a269811505b1afb988e3aec0ee17ca7597b0212f819e8ff751381f4631","source_id":"bilibili-popular-all","source_name":"Bilibili Popular All","provider":"bilibili","category":"consumer_attention","priority":"medium","title":"TES：完美的陀螺回旋！","summary":"OK了家人们做了好几天的整活~求个三连关注~ 开头部分参考@Valorant最后一束光 的视频处理 BLG加油~","content":"OK了家人们做了好几天的整活~求个三连关注~ 开头部分参考@Valorant最后一束光 的视频处理 BLG加油~","link":"https://www.bilibili.com/video/BV1epMb6bEYo","published_at":"2026-07-07T13:59:44+00:00","fetched_at":"2026-07-08T09:53:48+08:00","author":"聒噪的山海君","tags":["video","creator-economy","china-market"],"quality_flags":[]},{"id":"568efd5efbea149f8002cf82daab89e86a20f3910c84460780fc81509d9e8a81","source_id":"bilibili-popular-all","source_name":"Bilibili Popular All","provider":"bilibili","category":"consumer_attention","priority":"medium","title":"当英语老师作业没收齐！","summary":"最后的晚餐。","content":"最后的晚餐。","link":"https://www.bilibili.com/video/BV1cYM86rE55","published_at":"2026-07-07T11:24:10+00:00","fetched_at":"2026-07-08T09:53:48+08:00","author":"一串大福","tags":["video","creator-economy","china-market"],"quality_flags":[]},{"id":"9ca79a48a0d6eb5d1b8767aa6d5568c5272a02ade543ef94c2ad0c137fa17e02","source_id":"bilibili-popular-all","source_name":"Bilibili Popular All","provider":"bilibili","category":"consumer_attention","priority":"medium","title":"航天嘉豪记","summary":null,"content":null,"link":"https://www.bilibili.com/video/BV133M86dEtZ","published_at":"2026-07-07T11:14:47+00:00","fetched_at":"2026-07-08T09:53:48+08:00","author":"狂野的蜂","tags":["video","creator-economy","china-market"],"quality_flags":["content_empty"]}]};
+
+    const data = window.DASHBOARD_DATA;
+    const USER_MD_STORAGE_KEY = 'founder-intelligence:user-md';
+    const SOURCE_CARDS_STORAGE_KEY = 'founder-intelligence:source-cards';
+    const sourceState = loadSourceState();
+    const state = {
+      source: 'all',
+      category: 'all',
+      search: '',
+      activeItemId: data.items[0] ? data.items[0].id : null,
+      userMd: loadUserMd(),
+      userTerms: { include: [], exclude: [] },
+      onlyUserRelevant: false,
+      hiddenSourceIds: sourceState.hiddenSourceIds,
+      customSourceCards: sourceState.customSourceCards,
+      sourceDraft: '',
+      sourceSuggestion: ''
+    };
+
+    const $ = (selector) => document.querySelector(selector);
+    const fmt = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' });
+
+    function text(value, fallback = '—') {
+      return value === null || value === undefined || value === '' ? fallback : String(value);
+    }
+
+    function formatTime(value) {
+      if (!value) return '—';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return fmt.format(date);
+    }
+
+    function statusClass(status) {
+      if (status === 'ok') return 'ok';
+      if (status === 'disabled' || status === 'not_fetched') return 'warn';
+      if (status === 'partial') return 'blue';
+      return 'warn';
+    }
+
+    function escapeHtml(value) {
+      return text(value, '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[char]));
+    }
+
+    function pill(label, cls = '') {
+      return `<span class="pill ${cls}">${escapeHtml(label)}</span>`;
+    }
+
+    function loadSourceState() {
+      try {
+        const parsed = JSON.parse(window.localStorage.getItem(SOURCE_CARDS_STORAGE_KEY) || '{}');
+        return {
+          hiddenSourceIds: Array.isArray(parsed.hiddenSourceIds) ? parsed.hiddenSourceIds : [],
+          customSourceCards: Array.isArray(parsed.customSourceCards) ? parsed.customSourceCards : []
+        };
+      } catch (_error) {
+        return { hiddenSourceIds: [], customSourceCards: [] };
+      }
+    }
+
+    function storeSourceState() {
+      try {
+        window.localStorage.setItem(SOURCE_CARDS_STORAGE_KEY, JSON.stringify({
+          hiddenSourceIds: state.hiddenSourceIds,
+          customSourceCards: state.customSourceCards
+        }));
+        return true;
+      } catch (_error) {
+        return false;
+      }
+    }
+
+    function sourceDescription(source) {
+      return text(
+        source.description ||
+        source.notes ||
+        source.connection?.rss_url ||
+        source.connection?.rsshub_route ||
+        '已接入抓取流程的信息源。'
+      );
+    }
+
+    function baseSourceCards() {
+      return data.sources.map((source) => ({
+        id: source.id,
+        name: source.name,
+        provider: source.provider,
+        priority: source.priority || 'medium',
+        status: source.status,
+        canonical_count: source.canonical_count,
+        tags: source.tags || [],
+        description: sourceDescription(source),
+        custom: false
+      }));
+    }
+
+    function visibleSourceCards() {
+      const base = baseSourceCards().filter((source) => !state.hiddenSourceIds.includes(source.id));
+      return [...base, ...state.customSourceCards];
+    }
+
+    function visibleDataSourceIds() {
+      return visibleSourceCards().filter((source) => !source.custom).map((source) => source.id);
+    }
+
+    function visibleDataItems() {
+      const ids = visibleDataSourceIds();
+      return data.items.filter((item) => ids.includes(item.source_id));
+    }
+
+    function sourceDraftTerms(value) {
+      const cleaned = text(value, '')
+        .replace(/[。！？!?]/g, '，')
+        .replace(/(我想|想要|想看|帮我|追踪|关注|抓取|检索|找到|关于|信息源|资讯|新闻|内容)/g, ' ');
+      const terms = splitTermLine(cleaned)
+        .flatMap((part) => part.split(/\s+/))
+        .map((part) => normalizeTerm(part))
+        .filter(Boolean);
+      return Array.from(new Set(terms)).slice(0, 10);
+    }
+
+    function buildSourceSuggestion(value) {
+      const raw = text(value, '').trim();
+      const terms = sourceDraftTerms(raw);
+      const focus = terms.length ? terms.join('、') : (raw || '待补充主题');
+      const haystack = `${raw} ${terms.join(' ')}`.toLowerCase();
+      const channels = ['官网 Blog / Changelog', 'RSS / RSSHub 路由', '行业媒体与专题页'];
+
+      if (/(github|开源|repo|release|版本|sdk|api)/i.test(haystack)) {
+        channels.push('GitHub Releases / Issues');
+      }
+      if (/(投融资|融资|创业|创始人|vc|startup|product hunt|yc)/i.test(haystack)) {
+        channels.push('Product Hunt / YC / 投资机构博客');
+      }
+      if (/(社媒|twitter|x|微博|小红书|公众号|播客|youtube)/i.test(haystack)) {
+        channels.push('社媒搜索页 / 公众号 / 播客更新');
+      }
+
+      return [
+        `检索目标：持续发现「${focus}」相关的一手信息源。`,
+        `优先渠道：${Array.from(new Set(channels)).join('、')}。`,
+        `关键词组合：${terms.length ? terms.join(' OR ') : focus}。`,
+        '抓取要求：保留标题、来源、发布时间、摘要和原文链接，优先一手发布与高信噪比来源。',
+        '排除：广告、重复转载、无来源摘要、纯观点转述。'
+      ].join('\n');
+    }
+
+    function sourceDraftName(value) {
+      const terms = sourceDraftTerms(value);
+      if (terms.length === 0) return '新信息源';
+      return `${terms.slice(0, 2).join(' / ')} 线索`;
+    }
+
+    function addDraftSourceCard() {
+      const draft = state.sourceDraft.trim();
+      if (!draft) {
+        state.sourceSuggestion = '先写下要追踪的主题、公司、人物或渠道。';
+        renderSources();
+        return;
+      }
+
+      const suggestion = state.sourceSuggestion && !state.sourceSuggestion.startsWith('先写下')
+        ? state.sourceSuggestion
+        : buildSourceSuggestion(draft);
+      const card = {
+        id: `custom-${Date.now()}`,
+        name: sourceDraftName(draft),
+        provider: 'AI prompt',
+        priority: 'draft',
+        status: 'draft',
+        canonical_count: 0,
+        tags: sourceDraftTerms(draft).slice(0, 6),
+        description: suggestion,
+        custom: true
+      };
+
+      state.customSourceCards = [...state.customSourceCards, card];
+      state.sourceDraft = '';
+      state.sourceSuggestion = '';
+      storeSourceState();
+      renderAll();
+    }
+
+    function removeSourceCard(id) {
+      if (id.startsWith('custom-')) {
+        state.customSourceCards = state.customSourceCards.filter((source) => source.id !== id);
+      } else if (!state.hiddenSourceIds.includes(id)) {
+        state.hiddenSourceIds = [...state.hiddenSourceIds, id];
+      }
+      if (state.source === id) state.source = 'all';
+      storeSourceState();
+      renderAll();
+    }
+
+    function renderSourceFilterOptions() {
+      const cards = visibleSourceCards();
+      const options = ['all', ...cards.map((source) => source.id)];
+      if (!options.includes(state.source)) state.source = 'all';
+      $('#sourceFilter').innerHTML = options.map((id) => {
+        const source = cards.find((candidate) => candidate.id === id);
+        const label = id === 'all' ? '全部可见来源' : source.name;
+        return `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`;
+      }).join('');
+      $('#sourceFilter').value = state.source;
+    }
+
+    function defaultUserMd() {
+      return [
+        '# user.md',
+        '',
+        '## 关注对象',
+        '- 信息聚合器',
+        '- AI Agent',
+        '- 创始人效率',
+        '',
+        '## 关键词',
+        'AI, Agent, RSS, 产品, 增长, 投资, 竞品, 信息源',
+        '',
+        '## 排除',
+        '- 纯广告',
+        '- 娱乐八卦'
+      ].join('\n');
+    }
+
+    function loadUserMd() {
+      try {
+        return window.localStorage.getItem(USER_MD_STORAGE_KEY) || defaultUserMd();
+      } catch (_error) {
+        return defaultUserMd();
+      }
+    }
+
+    function storeUserMd(value) {
+      try {
+        window.localStorage.setItem(USER_MD_STORAGE_KEY, value);
+        return true;
+      } catch (_error) {
+        return false;
+      }
+    }
+
+    function splitTermLine(value) {
+      const separators = ['，', ',', '、', ';', '；', '|', '/', '\\'];
+      return separators.reduce((parts, separator) => (
+        parts.flatMap((part) => part.split(separator))
+      ), [value]);
+    }
+
+    function normalizeTerm(term) {
+      const normalized = text(term, '')
+        .replace(/^[：:]+/, '')
+        .replace(/[。！？!?]+$/g, '')
+        .trim()
+        .toLowerCase();
+      if (normalized.length < 2 || normalized.length > 40) return null;
+      if (/^(user\.md|user|md)$/i.test(normalized)) return null;
+      return normalized;
+    }
+
+    function parseUserMd(markdown) {
+      const include = [];
+      const exclude = [];
+      let section = 'include';
+      const addTerm = (collection, term) => {
+        const normalized = normalizeTerm(term);
+        if (normalized && !collection.includes(normalized)) collection.push(normalized);
+      };
+
+      text(markdown, '').split(/\r?\n/).forEach((line) => {
+        const raw = line.trim();
+        if (!raw) return;
+        if (/^#+/.test(raw)) {
+          const heading = raw.replace(/^#+\s*/, '').toLowerCase();
+          section = /(排除|忽略|不关注|exclude|ignore)/i.test(heading) ? 'exclude' : 'include';
+          return;
+        }
+
+        const normalizedLine = raw
+          .replace(/^[-*+]\s*/, '')
+          .replace(/^(关键词|关注对象|行业|公司|主题|排除|忽略|不关注|目标|问题|focus|keywords|exclude|ignore)[:：]/i, '')
+          .replace(/[`*_>#]/g, ' ')
+          .trim();
+
+        splitTermLine(normalizedLine).forEach((part) => {
+          addTerm(section === 'exclude' ? exclude : include, part);
+        });
+      });
+
+      return {
+        include: include.slice(0, 48),
+        exclude: exclude.slice(0, 24)
+      };
+    }
+
+    function itemHaystack(item) {
+      return [
+        item.title,
+        item.summary,
+        item.content,
+        item.source_name,
+        item.provider,
+        item.category,
+        (item.tags || []).join(' ')
+      ].join(' ').toLowerCase();
+    }
+
+    function contextForItem(item) {
+      const haystack = itemHaystack(item);
+      const hits = state.userTerms.include.filter((term) => haystack.includes(term));
+      const excluded = state.userTerms.exclude.filter((term) => haystack.includes(term));
+      return {
+        hits,
+        excluded,
+        relevant: hits.length > 0 && excluded.length === 0
+      };
+    }
+
+    function contextMatchCount() {
+      return visibleDataItems().filter((item) => contextForItem(item).relevant).length;
+    }
+
+    function renderSources() {
+      const list = $('#sourceList');
+      const cards = visibleSourceCards();
+      const allCard = `
+        <article class="source-card ${state.source === 'all' ? 'active' : ''}" data-source="all">
+          <div class="source-name">
+            <span>全部可见来源</span>
+            <span class="source-count">${visibleDataItems().length}</span>
+          </div>
+          <p class="source-description">汇总当前保留的信息源卡片；删除卡片后，对应抓取信息会从全部视图中隐藏。</p>
+          <div class="source-meta">
+            ${pill(`${cards.length} 张卡`, 'ok')}
+            ${pill(`${state.customSourceCards.length} 张草稿`, state.customSourceCards.length ? 'warn' : '')}
+            ${state.hiddenSourceIds.length ? `<button type="button" class="source-mini-action" id="restoreDefaultSources">恢复默认源</button>` : ''}
+          </div>
+        </article>
+      `;
+
+      const sourceCards = cards.map((source) => `
+        <article class="source-card ${state.source === source.id ? 'active' : ''}" data-source="${escapeHtml(source.id)}">
+          <button type="button" class="source-remove" data-remove-source="${escapeHtml(source.id)}" aria-label="删除 ${escapeHtml(source.name)}">×</button>
+          <div class="source-name">
+            <span>${escapeHtml(source.name)}</span>
+            <span class="source-count">${source.custom ? '0' : source.canonical_count}</span>
+          </div>
+          <p class="source-description">${escapeHtml(source.description)}</p>
+          <div class="source-meta">
+            ${pill(source.status, statusClass(source.status))}
+            ${pill(source.provider || 'source')}
+            ${pill(source.priority || 'medium')}
+            ${source.custom ? pill('待接入', 'warn') : ''}
+          </div>
+        </article>
+      `).join('');
+
+      const draftCard = `
+        <article class="source-card empty" id="sourceDraftCard">
+          <div class="source-name">
+            <span>添加信息源</span>
+            <span class="pill blue">空白卡片</span>
+          </div>
+          <textarea class="source-draft-area" id="sourceDraftInput" placeholder="输入想追踪的主题、公司、人物、渠道或问题">${escapeHtml(state.sourceDraft)}</textarea>
+          <div class="source-draft-actions">
+            <button type="button" id="assistSourcePrompt">AI补全</button>
+            <button type="button" id="addSourceCard">加入</button>
+            <button type="button" id="clearSourceDraft">清空</button>
+          </div>
+          ${state.sourceSuggestion ? `<div class="source-ai-output" id="sourceAiOutput">${escapeHtml(state.sourceSuggestion)}</div>` : '<div class="muted-note">AI 补全会把输入转成可用于检索信息源的提示。</div>'}
+        </article>
+      `;
+
+      list.innerHTML = allCard + sourceCards + draftCard;
+      renderSourceFilterOptions();
+
+      list.querySelectorAll('.source-card[data-source]').forEach((card) => {
+        card.addEventListener('click', (event) => {
+          if (event.target.closest('button')) return;
+          state.source = state.source === card.dataset.source && card.dataset.source !== 'all' ? 'all' : card.dataset.source;
+          renderSourceFilterOptions();
+          renderAll();
+        });
+      });
+
+      list.querySelectorAll('[data-remove-source]').forEach((button) => {
+        button.addEventListener('click', (event) => {
+          event.stopPropagation();
+          removeSourceCard(button.dataset.removeSource);
+        });
+      });
+
+      $('#sourceDraftInput').addEventListener('input', (event) => {
+        state.sourceDraft = event.target.value;
+      });
+      $('#assistSourcePrompt').addEventListener('click', () => {
+        state.sourceSuggestion = buildSourceSuggestion(state.sourceDraft);
+        renderSources();
+      });
+      $('#addSourceCard').addEventListener('click', () => {
+        addDraftSourceCard();
+      });
+      $('#clearSourceDraft').addEventListener('click', () => {
+        state.sourceDraft = '';
+        state.sourceSuggestion = '';
+        renderSources();
+      });
+      const restoreButton = $('#restoreDefaultSources');
+      if (restoreButton) {
+        restoreButton.addEventListener('click', (event) => {
+          event.stopPropagation();
+          state.hiddenSourceIds = [];
+          storeSourceState();
+          renderAll();
+        });
+      }
+    }
+
+    function renderHeader() {
+      const userTermCount = state.userTerms.include.length;
+      const userMatchLabel = userTermCount > 0 ? `${contextMatchCount()} 条 user.md 相关` : 'user.md 0 词';
+      $('#summaryStrip').innerHTML = [
+        pill(`${visibleSourceCards().length} 张源卡`, 'ok'),
+        pill(`${visibleDataItems().length} 条抓取信息`, 'blue'),
+        pill(userMatchLabel, userTermCount > 0 ? 'ok' : 'warn'),
+        pill(`生成 ${formatTime(data.generated_at)}`)
+      ].join('');
+    }
+
+    function initFilters() {
+      renderSourceFilterOptions();
+
+      const categories = ['all', ...Array.from(new Set(data.items.map((item) => item.category || 'unknown'))).sort()];
+      $('#categoryFilter').innerHTML = categories.map((category) => {
+        const label = category === 'all' ? '全部分类' : category;
+        return `<option value="${escapeHtml(category)}">${escapeHtml(label)}</option>`;
+      }).join('');
+
+      $('#searchInput').addEventListener('input', (event) => {
+        state.search = event.target.value.trim().toLowerCase();
+        renderItems();
+      });
+      $('#sourceFilter').addEventListener('change', (event) => {
+        state.source = event.target.value;
+        renderAll();
+      });
+      $('#categoryFilter').addEventListener('change', (event) => {
+        state.category = event.target.value;
+        renderItems();
+      });
+    }
+
+    function renderUserPanelMeta(message = '') {
+      const includeTerms = state.userTerms.include;
+      const excludeTerms = state.userTerms.exclude;
+      const toggle = $('#contextOnlyToggle');
+      const toggleLabel = $('#contextToggleLabel');
+
+      $('#userTermCount').textContent = `${includeTerms.length} 词`;
+      toggle.checked = state.onlyUserRelevant;
+      toggle.disabled = includeTerms.length === 0;
+      toggleLabel.classList.toggle('disabled', includeTerms.length === 0);
+
+      const preview = [
+        ...includeTerms.slice(0, 8).map((term) => pill(term, 'blue')),
+        ...excludeTerms.slice(0, 4).map((term) => pill(`排除 ${term}`, 'warn'))
+      ];
+      $('#userTermPreview').innerHTML = preview.length ? preview.join('') : '<span class="muted-note">暂无关键词</span>';
+      $('#userMdStatus').textContent = message || `${contextMatchCount()} 条当前信息命中`;
+    }
+
+    function applyUserMd(value, message = '') {
+      state.userMd = value;
+      state.userTerms = parseUserMd(value);
+      if (state.userTerms.include.length === 0) {
+        state.onlyUserRelevant = false;
+      }
+      renderUserPanelMeta(message);
+      renderAll();
+    }
+
+    function downloadUserMd() {
+      const blob = new Blob([state.userMd], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'user.md';
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function initUserPanel() {
+      const input = $('#userMdInput');
+      state.userTerms = parseUserMd(state.userMd);
+      input.value = state.userMd;
+
+      input.addEventListener('input', (event) => {
+        applyUserMd(event.target.value);
+      });
+      $('#saveUserMd').addEventListener('click', () => {
+        const saved = storeUserMd(state.userMd);
+        renderUserPanelMeta(saved ? '已保存到本机浏览器' : '浏览器未允许保存');
+      });
+      $('#resetUserMd').addEventListener('click', () => {
+        input.value = defaultUserMd();
+        storeUserMd(input.value);
+        applyUserMd(input.value, '已重置');
+      });
+      $('#downloadUserMd').addEventListener('click', () => {
+        downloadUserMd();
+        renderUserPanelMeta('已生成 user.md 下载');
+      });
+      $('#contextOnlyToggle').addEventListener('change', (event) => {
+        state.onlyUserRelevant = event.target.checked;
+        renderUserPanelMeta();
+        renderHeader();
+        renderItems();
+      });
+
+      renderUserPanelMeta();
+    }
+
+    function filteredItems() {
+      return data.items.filter((item) => {
+        const visibleSourceIds = visibleDataSourceIds();
+        const sourceVisible = visibleSourceIds.includes(item.source_id);
+        const sourceOk = state.source === 'all'
+          ? sourceVisible
+          : sourceVisible && item.source_id === state.source;
+        const categoryOk = state.category === 'all' || (item.category || 'unknown') === state.category;
+        const haystack = itemHaystack(item);
+        const searchOk = !state.search || haystack.includes(state.search);
+        const userOk = !state.onlyUserRelevant || contextForItem(item).relevant;
+        return sourceOk && categoryOk && searchOk && userOk;
+      });
+    }
+
+    function renderItems() {
+      const items = filteredItems();
+      if (!items.find((item) => item.id === state.activeItemId)) {
+        state.activeItemId = items[0] ? items[0].id : null;
+      }
+      $('#itemList').innerHTML = items.length ? items.map((item) => {
+        const context = contextForItem(item);
+        return `
+          <article class="item-card ${item.id === state.activeItemId ? 'active' : ''} ${context.relevant ? 'context-match' : ''}" data-item="${escapeHtml(item.id)}">
+            <div class="source-meta">
+              ${pill(item.source_name || item.source_id)}
+              ${pill(item.category || 'unknown')}
+              ${(item.quality_flags || []).slice(0, 2).map((flag) => pill(flag, 'warn')).join('')}
+              ${context.hits.slice(0, 3).map((term) => pill(term, 'ok')).join('')}
+            </div>
+            <h3>${escapeHtml(item.title)}</h3>
+            <p>${escapeHtml(item.summary || item.content || 'No summary captured.')}</p>
+          </article>
+        `;
+      }).join('') : '<div class="empty-state">当前筛选条件下没有抓取信息。</div>';
+
+      $('#itemList').querySelectorAll('.item-card').forEach((card) => {
+        card.addEventListener('click', () => {
+          state.activeItemId = card.dataset.item;
+          renderItems();
+        });
+      });
+
+      renderDetail(items);
+    }
+
+    function renderDetail(items) {
+      const item = items.find((candidate) => candidate.id === state.activeItemId);
+      const detail = $('#itemDetail');
+      if (!item) {
+        detail.innerHTML = '<div class="empty-state">选择左侧任意抓取信息查看详情。</div>';
+        return;
+      }
+      const body = item.content || item.summary || 'No content captured.';
+      const context = contextForItem(item);
+      const contextHtml = context.hits.length > 0 ? `
+        <div class="context-match-box">
+          <strong>user.md 命中</strong>
+          <div class="source-meta">
+            ${context.hits.slice(0, 10).map((term) => pill(term, 'ok')).join('')}
+            ${context.excluded.slice(0, 4).map((term) => pill(`排除 ${term}`, 'warn')).join('')}
+          </div>
+        </div>
+      ` : `
+        <div class="context-match-box">
+          <strong>user.md 未命中</strong>
+          <div class="context-status">该条信息暂未匹配当前关注对象与关键词。</div>
+        </div>
+      `;
+      detail.innerHTML = `
+        <div class="source-meta">
+          ${pill(item.source_name || item.source_id, 'ok')}
+          ${pill(item.provider)}
+          ${pill(formatTime(item.fetched_at))}
+        </div>
+        <h2>${escapeHtml(item.title)}</h2>
+        ${contextHtml}
+        <div class="detail-body">${escapeHtml(body)}</div>
+        <div class="source-meta" style="margin-top:16px">
+          ${(item.tags || []).slice(0, 8).map((tag) => pill(tag)).join('')}
+        </div>
+        ${item.link ? `<a class="detail-link" href="${escapeHtml(item.link)}" target="_blank" rel="noreferrer">打开原文</a>` : ''}
+      `;
+    }
+
+    function renderAll() {
+      renderSources();
+      renderHeader();
+      renderItems();
+    }
+
+    initFilters();
+    initUserPanel();
+    renderAll();
+  </script>
+</body>
+</html>

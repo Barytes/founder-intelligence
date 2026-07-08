@@ -1,0 +1,122 @@
+version: 1
+
+base_urls:
+  rsshub: http://localhost:1200
+
+defaults:
+  enabled: true
+  refresh_interval_minutes: 30
+  timeout_seconds: 20
+  retry_attempts: 3
+  priority: medium
+
+sources:
+  - id: github-trending-daily
+    name: GitHub Trending Daily
+    source_type: rss
+    provider: github
+    fetcher: rsshub
+    enabled: true
+    priority: high
+    category: developer_trends
+    connection:
+      rsshub_route: /github/trending/daily/any
+      rss_url: http://localhost:1200/github/trending/daily/any
+      required_env:
+        - GITHUB_ACCESS_TOKEN
+    schedule:
+      refresh_interval_minutes: 30
+    tags:
+      - open-source
+      - developer-tools
+      - startup-signals
+    notes: GitHub Trending requires GITHUB_ACCESS_TOKEN in .env.
+
+  - id: zhihu-hot
+    name: Zhihu Hot
+    source_type: rss
+    provider: zhihu
+    fetcher: rsshub
+    enabled: true
+    priority: medium
+    category: market_discussion
+    connection:
+      rsshub_route: /zhihu/hot
+      rss_url: http://localhost:1200/zhihu/hot
+    schedule:
+      refresh_interval_minutes: 20
+    tags:
+      - china-market
+      - public-opinion
+      - trending
+
+  - id: bilibili-popular-all
+    name: Bilibili Popular All
+    source_type: rss
+    provider: bilibili
+    fetcher: rsshub
+    enabled: true
+    priority: medium
+    category: consumer_attention
+    connection:
+      rsshub_route: /bilibili/popular/all
+      rss_url: http://localhost:1200/bilibili/popular/all
+    schedule:
+      refresh_interval_minutes: 30
+    tags:
+      - video
+      - creator-economy
+      - china-market
+
+  - id: github-activity-diygod
+    name: GitHub Activity DIYgod
+    source_type: rss
+    provider: github
+    fetcher: rsshub
+    enabled: false
+    priority: low
+    category: reference_feed
+    connection:
+      rsshub_route: /github/activity/DIYgod
+      rss_url: http://localhost:1200/github/activity/DIYgod
+    schedule:
+      refresh_interval_minutes: 60
+    tags:
+      - github
+      - reference
+    notes: Known-good GitHub route for RSSHub smoke tests.
+
+source_templates:
+  xiaohongshu_mcp_keyword:
+    source_type: mcp
+    provider: xiaohongshu
+    fetcher: xiaohongshu-mcp
+    enabled: false
+    category: consumer_attention
+    connection:
+      tool: xiaohongshu-mcp
+      query: AI founder
+      sort: latest
+    schedule:
+      refresh_interval_minutes: 60
+    tags:
+      - xiaohongshu
+      - china-market
+    notes: Enable only after xiaohongshu-mcp is installed and the exact query/account target is confirmed.
+
+  wechat_mcp_account:
+    source_type: mcp
+    provider: wechat
+    fetcher: wechat-mcp
+    enabled: false
+    category: founder_research
+    connection:
+      tool: wechat-mcp
+      accounts:
+        - replace_with_account_id
+    schedule:
+      refresh_interval_minutes: 120
+    tags:
+      - wechat
+      - long-form
+    notes: Enable only after the target public accounts and MCP fetcher contract are confirmed.

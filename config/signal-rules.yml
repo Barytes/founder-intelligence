@@ -1,0 +1,136 @@
+version: 1
+
+scoring:
+  priority_weights:
+    high: 1.2
+    medium: 0.6
+    low: 0.2
+  source_type_weights:
+    rss: 0.3
+    mcp: 0.4
+    api: 0.4
+    html: 0.1
+  recency:
+    same_day: 0.8
+    within_3_days: 0.5
+    older: 0.1
+    unknown: 0.2
+  content:
+    title: 0.6
+    summary: 0.4
+    content: 0.3
+    source_tag: 0.3
+  clamp:
+    min: 1
+    max: 5
+
+keyword_rules:
+  - tag: ai-agent
+    label: AI Agent
+    terms:
+      - AI agent
+      - agents
+      - agentic
+      - autonomous agent
+      - 智能体
+      - 代理
+
+  - tag: ai-coding
+    label: AI Coding
+    terms:
+      - AI coding
+      - Claude Code
+      - Codex
+      - coding agent
+      - devtools
+      - developer tools
+      - 代码助手
+      - 编程
+
+  - tag: context
+    label: Context
+    terms:
+      - context
+      - memory
+      - personal context
+      - knowledge graph
+      - ontology
+      - 上下文
+      - 记忆
+      - 知识图谱
+      - 本体
+
+  - tag: mcp
+    label: MCP
+    terms:
+      - MCP
+      - Model Context Protocol
+      - mcp server
+
+  - tag: meeting-intelligence
+    label: Meeting Intelligence
+    terms:
+      - meeting
+      - transcript
+      - transcription
+      - meeting note
+      - 会议
+      - 纪要
+      - 转录
+
+  - tag: investment-research
+    label: Investment Research
+    terms:
+      - investment
+      - funding
+      - valuation
+      - investor
+      - venture
+      - startup
+      - 投资
+      - 融资
+      - 创业
+
+  - tag: social-signal
+    label: Social Signal
+    terms:
+      - trending
+      - hot
+      - viral
+      - 知乎
+      - 小红书
+      - Bilibili
+      - 热榜
+      - 热门
+
+  - tag: open-source
+    label: Open Source
+    terms:
+      - GitHub
+      - open source
+      - OSS
+      - self-hosted
+      - 开源
+
+recommendation:
+  top_n: 10
+  min_relevance_score: 2
+  max_summary_sentences: 2
+  max_questions: 3
+  max_risks: 2
+
+filters:
+  excluded_sources: []
+  excluded_categories:
+    - reference_feed
+
+question_templates:
+  - 这个信号是否说明某个用户痛点正在变强？
+  - 这个变化与当前项目的目标用户、数据源或工作流有什么交集？
+  - 是否值得继续追踪同类项目、竞品、融资或用户反馈？
+  - 如果要验证这个机会，最小可做的实验是什么？
+
+risk_templates:
+  - 当前证据可能只代表短期热度，需要继续观察是否有持续增长。
+  - 来源可能偏单一，重要判断需要至少一个高质量主源交叉验证。
+  - 推荐基于关键词和规则评分，不能替代人工判断。
