@@ -10,4 +10,5 @@ data/canonical-items/*.json
 data/signals/*.json
 data/dashboard/*
 data/agentic/
+data/app/
 data/store/**/*.jsonl

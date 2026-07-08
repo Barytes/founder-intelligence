@@ -27,4 +27,4 @@ Responsibilities:
 - drop duplicate items within the same run
 - add quality flags for missing optional fields
 
-This step still does not persist to a database. The JSON output is a local artifact for validating the ingestion contract before storage is introduced.
+This step does not persist to a database. The JSON output is the local handoff artifact consumed by `src/store_canonical_jsonl.rb` and by downstream signal processing.

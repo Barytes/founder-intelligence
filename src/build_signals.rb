@@ -14,7 +14,7 @@ DEFAULT_OPTIONS = {
   "rules" => "config/signal-rules.yml",
   "output" => "data/signals/latest.json",
   "markdown" => "data/dashboard/latest.md",
-  "html" => "data/dashboard/latest.html",
+  "html" => "data/dashboard/generated-latest.html",
   "top_n" => nil
 }.freeze
 

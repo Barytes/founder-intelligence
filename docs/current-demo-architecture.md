@@ -1,6 +1,8 @@
-# 当前 Demo 功能、架构与工作流程
+# 当前 Runtime 架构与工作流程
 
-本文描述当前 Founder Intelligence demo 的真实实现边界。它不是一个常驻 Web 应用，也不是 Agentic AI 应用，而是一个本地运行的确定性信息聚合流水线。
+本文描述 Founder Intelligence 当前真实运行边界：底层是本地确定性 RSS-only 信息聚合 pipeline，上层是一个本地 Web app 控制台。Web app 不重写抓取、ingestion、存储或评分逻辑；它负责展示最新成功 signals、编辑允许暴露的配置，并触发一次同步 refresh。
+
+更细的 Web app 路由、前端和 runner 说明见 [web-app/architecture.md](web-app/architecture.md)。
 
 ## 当前功能
 
@@ -30,23 +32,48 @@
 - 自动行动执行
 - 长期记忆
 - 可运行的 MCP/API/HTML fetcher
+当前实现已经具备：
+
+- 从 RSSHub 抓取启用的 RSS/Atom 信息源。
+- 将原始条目转换成 canonical item。
+- 清理 HTML、标准化链接和时间。
+- 生成内容 hash 和去重 key。
+- 对条目打质量标记。
+- 将 canonical item 追加写入 JSONL store。
+- 根据 `config/user-profile.yml` 和 `config/signal-rules.yml` 计算重要性、相关性和总分。
+- 生成 `data/signals/latest.json` 和 `data/dashboard/latest.md`。
+- 通过 `src/web_app.rb` 启动本地 Web app，读取最新成功 signals。
+- Web app 可编辑 `config/user-profile.yml` 和 `config/sources.yml`。
+- Web app 可手动触发一次 RSS-only refresh。
+
+当前实现不包含：
+
+- 自动调度器。
+- 数据库。
+- Chat UI。
+- LLM 总结。
+- Agentic planning。
+- 自动行动执行。
+- 长期记忆。
+- 可运行的 MCP/API/HTML/file fetcher。
 
 ## 目录结构
 
 当前主要目录是：
 
 ```text
-config/        YAML 配置、Docker Compose 配置、fetcher contract
-src/           Ruby 源代码
-data/          抓取结果、canonical items、signals、dashboard、JSONL store
+config/        YAML 配置和 Docker Compose 配置
+src/           Ruby pipeline 源代码和 Web app 源代码
+data/          抓取结果、canonical items、signals、dashboard、JSONL store 和运行状态
 docs/          项目文档
+tests/         Web app 和 pipeline runner 测试
 ```
 
-`config/` 是静态配置层，`src/` 是执行层，`data/` 是运行产物层。
+`config/` 是配置层，`src/` 是执行层，`data/` 是运行产物层。Web app 的前端资源位于 `src/web/public/`，不是 `data/dashboard/index.html`。
 
-## 运行入口
+## CLI Pipeline 入口
 
-完整 demo 流程从项目根目录运行：
+完整 CLI pipeline 从项目根目录运行：
 
 ```bash
 docker compose -f config/docker-compose.yml up -d rsshub
@@ -56,49 +83,73 @@ ruby src/store_canonical_jsonl.rb --input data/canonical-items/latest.json --sto
 ruby src/build_signals.rb --input data/canonical-items/latest.json --profile config/user-profile.yml --rules config/signal-rules.yml
 ```
 
-如果只想查看已有结果，可以直接打开：
+`src/build_signals.rb` 默认输出：
 
 ```text
-data/dashboard/latest.html
+data/signals/latest.json
+data/dashboard/latest.md
+data/dashboard/generated-latest.html
 ```
+
+其中 `generated-latest.html` 是过渡期静态 HTML 产物，不是当前 Web app 首页。
+
+## Web App 入口
+
+启动命令：
+
+```bash
+ruby src/web_app.rb --port 4567
+```
+
+访问地址：
+
+```text
+http://127.0.0.1:4567/
+```
+
+Web app 默认绑定 `127.0.0.1`。页面读取 `data/signals/latest.json` 展示最新成功 signals；点击刷新时由 `src/web/pipeline_runner.rb` 顺序调用 CLI pipeline。
 
 ## 架构分层
 
-当前 demo 可以理解为五层。
+当前 runtime 可以理解为六层。
 
 第一层是 RSSHub。
 
-`config/docker-compose.yml` 启动本地 RSSHub，服务地址是：
+`config/docker-compose.yml` 启动本地 RSSHub，默认服务地址是：
 
 ```text
 http://localhost:1200
 ```
 
-`config/sources.yml` 中的 RSS 源都指向这个本地 RSSHub。
+第二层是 source 配置。
 
-第二层是 fetch adapter。
+`config/sources.yml` 是当前唯一 source registry。当前可运行 source 必须满足：
 
-`src/fetch_rss.rb` 读取 `config/sources.yml` 和 `config/ingestion-rules.yml`，筛选启用的 RSS 源，请求每个 source 的 `connection.rss_url`，解析 RSS/Atom XML，然后输出 adapter result。
+```ruby
+source["enabled"] != false && source["source_type"] == "rss"
+```
 
-输出位置通常是：
+MCP/API/HTML/file source template 可以存在于配置中，但不能被当前 fetcher 执行。
+
+第三层是 fetch adapter。
+
+`src/fetch_rss.rb` 读取 `config/sources.yml` 和 `config/ingestion-rules.yml`，筛选启用的 RSS source，请求每个 source 的 `connection.rss_url`，解析 RSS/Atom XML，然后输出 adapter result：
 
 ```text
 data/adapter-output/rss-fetch-latest.json
 ```
 
-第三层是 ingestion。
+第四层是 ingestion。
 
-`src/ingest_adapter_output.rb` 读取 adapter output、`config/sources.yml`、`config/ingestion-rules.yml`，把 raw item 变成统一的 canonical item。
-
-输出位置是：
+`src/ingest_adapter_output.rb` 读取 adapter output、`config/sources.yml`、`config/ingestion-rules.yml`，把 raw item 变成统一 canonical item：
 
 ```text
 data/canonical-items/latest.json
 ```
 
-第四层是 storage。
+第五层是 storage。
 
-`src/store_canonical_jsonl.rb` 读取 canonical items，将新 item 追加写入：
+`src/store_canonical_jsonl.rb` 将新 item 追加写入：
 
 ```text
 data/store/items/YYYY-MM-DD.jsonl
@@ -107,11 +158,11 @@ data/store/runs/YYYY-MM-DD.jsonl
 
 它是 append-only 文件存储，不是数据库。
 
-第五层是 signal processing 和 dashboard。
+第六层是 signal processing 和 Web app。
 
-`src/build_signals.rb` 读取 canonical items、`config/user-profile.yml`、`config/signal-rules.yml`，生成用户相关的 intelligence signals，并输出 JSON、Markdown、HTML dashboard。
+`src/build_signals.rb` 生成 signal JSON 和 Markdown。`src/web_app.rb` 负责提供本地 Web app，`src/web/pipeline_runner.rb` 负责把页面 refresh 转换成一次固定顺序的 pipeline 执行。
 
-## 工作流程
+## 数据流
 
 完整数据流如下：
 
@@ -144,33 +195,9 @@ src/build_signals.rb
         v
 data/signals/latest.json
 data/dashboard/latest.md
-data/dashboard/latest.html
-```
-
-## 当前实现边界
-
-当前真正实现的抓取路径只有 RSS。
-
-`config/sources.yml` 里可以出现 `mcp`、`api`、`html` 的模板或未来设计，但 `src/fetch_rss.rb` 只筛选：
-
-```ruby
-source["enabled"] != false && source["source_type"] == "rss"
-```
-
-因此 MCP/API/HTML 信息源目前不会被抓取。
-
-当前配置里也有 `schedule.refresh_interval_minutes`，但没有调度器消费这个字段。也就是说，当前 demo 是手动运行脚本，不会自动定时抓取。
-
-## 辅助信息源看板
-
-`src/build_source_dashboard.rb` 不是主情报流水线的一部分，但可以帮助检查信息源状态。
-
-它读取：
-
-```text
-config/sources.yml
-data/adapter-output/rss-fetch-latest.json
-data/canonical-items/latest.json
+        |
+        v
+src/web_app.rb
 ```
 
 然后生成：
@@ -178,5 +205,12 @@ data/canonical-items/latest.json
 ```text
 data/dashboard/source-dashboard.html
 ```
+## 当前边界
 
-这个页面适合用来检查哪些源启用、哪些源抓取成功、raw item 数量、canonical item 数量和错误状态。
+- 当前抓取路径只有 RSS。
+- `schedule.refresh_interval_minutes` 仍只是配置字段，没有调度器消费。
+- `config/user-profile.yml` 和 `config/sources.yml` 可从 Web app 编辑；其他 `config/` 文件仍需手动编辑。
+- Web app 的 source 启用/停用会写回 `config/sources.yml`。
+- Web app refresh 当前是同步 HTTP 请求，长任务期间页面会等待请求返回。
+- `data/dashboard/index.html` 是历史静态模板/对照文件，不是当前 Web app 首页。
+- `src/build_source_dashboard.rb` 仍是可手动运行的旧式信息源检查 helper，不属于当前主 Web app 路径。
