@@ -52,7 +52,7 @@ cp .env.example .env
 Set `OPENAI_API_KEY` in `.env`, then run:
 
 ```bash
-python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 8787
+PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 8787
 ```
 
 Open:

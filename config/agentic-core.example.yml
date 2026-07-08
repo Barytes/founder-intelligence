@@ -5,6 +5,34 @@ provider:
   default_base_url: https://api.openai.com/v1
   model: gpt-5
 
+provider_profiles:
+  active: openai
+  items:
+    openai:
+      label: OpenAI
+      type: openai_compatible
+      api_key_env: OPENAI_API_KEY
+      base_url: https://api.openai.com/v1
+      model: gpt-5
+    deepseek:
+      label: DeepSeek
+      type: openai_compatible
+      api_key_env: DEEPSEEK_API_KEY
+      base_url: https://api.deepseek.com/v1
+      model: deepseek-chat
+    openrouter:
+      label: OpenRouter
+      type: openai_compatible
+      api_key_env: OPENROUTER_API_KEY
+      base_url: https://openrouter.ai/api/v1
+      model: openai/gpt-4.1
+    custom:
+      label: Custom
+      type: openai_compatible
+      api_key_env: CUSTOM_LLM_API_KEY
+      base_url: https://api.openai.com/v1
+      model: gpt-5
+
 agent:
   system_prompt: |
     You are the Founder Intelligence Agentic Core. Use tools when they help

@@ -26,6 +26,24 @@ class ProviderConfig(BaseModel):
         }
 
 
+class ProviderProfileConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    template: str | None = None
+    type: Literal["openai_compatible"] = "openai_compatible"
+    api_key_env: str
+    base_url: str
+    model: str
+
+
+class ProviderProfilesConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    active: str
+    items: dict[str, ProviderProfileConfig]
+
+
 class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -53,6 +71,7 @@ class AgenticConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     provider: ProviderConfig
+    provider_profiles: ProviderProfilesConfig | None = None
     agent: AgentConfig
     tools: dict[str, ToolConfig] = Field(default_factory=dict)
     paths: PathConfig = Field(default_factory=PathConfig)

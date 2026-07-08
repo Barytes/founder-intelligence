@@ -32,14 +32,41 @@
       <aside class="panel side-panel">
         <section class="panel-section">
           <h2>Provider</h2>
-          <label class="field">
-            Model
-            <input id="model-input" readonly value="—" />
-          </label>
-          <label class="field">
-            Base URL
-            <input id="base-url-input" readonly value="—" />
-          </label>
+          <form id="provider-form" class="provider-form">
+            <label class="field">
+              Saved Configuration
+              <select id="config-select"></select>
+            </label>
+            <label class="field">
+              Provider Type
+              <select id="provider-select"></select>
+            </label>
+            <label class="field">
+              Config Name
+              <input id="config-name-input" placeholder="Work DeepSeek" />
+            </label>
+            <label class="field">
+              Model
+              <input id="model-input" value="—" />
+            </label>
+            <label class="field">
+              API Key
+              <input
+                id="api-key-input"
+                type="password"
+                autocomplete="new-password"
+                placeholder="sk-..."
+              />
+            </label>
+            <label class="field">
+              Base URL
+              <input id="base-url-edit-input" placeholder="https://api.openai.com/v1" />
+            </label>
+            <div class="provider-actions">
+              <button type="submit" id="provider-save">Save</button>
+              <p id="provider-save-status" class="provider-save-status" role="status" aria-live="polite"></p>
+            </div>
+          </form>
         </section>
 
         <section class="panel-section">

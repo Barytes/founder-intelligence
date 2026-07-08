@@ -18,7 +18,7 @@
 - 生成 `data/signals/latest.json`
 - 生成 `data/dashboard/latest.md`
 - 生成 `data/dashboard/latest.html`
-- 生成辅助信息源看板 `design-demos/information-source-dashboard.html`
+- 生成辅助信息源看板 `data/dashboard/source-dashboard.html`
 
 它暂时不包含：
 
@@ -40,7 +40,6 @@ config/        YAML 配置、Docker Compose 配置、fetcher contract
 src/           Ruby 源代码
 data/          抓取结果、canonical items、signals、dashboard、JSONL store
 docs/          项目文档
-design-demos/ 设计看板和截图
 ```
 
 `config/` 是静态配置层，`src/` 是执行层，`data/` 是运行产物层。
@@ -177,7 +176,7 @@ data/canonical-items/latest.json
 然后生成：
 
 ```text
-design-demos/information-source-dashboard.html
+data/dashboard/source-dashboard.html
 ```
 
 这个页面适合用来检查哪些源启用、哪些源抓取成功、raw item 数量、canonical item 数量和错误状态。

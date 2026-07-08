@@ -108,11 +108,12 @@ web_workbench/
 
 config/
   agentic-core.example.yml
+  agentic-core.local.yml   # gitignored local overrides
 
 .env.example
 ```
 
-The first implementation should add an example YAML file instead of changing current stable MVP config. A real local `config/agentic-core.yml` may be gitignored later if it contains machine-specific preferences, but it must not contain API tokens either way.
+The example YAML stays committed as the project template. Machine-specific non-secret preferences are written to gitignored `config/agentic-core.local.yml`. API tokens stay out of YAML and are loaded from `.env`.
 
 ## Core API
 
@@ -121,7 +122,7 @@ The core should be callable from Python:
 ```python
 from agentic_core import AgenticCore
 
-core = AgenticCore.from_config("config/agentic-core.yml")
+core = AgenticCore.from_config("config/agentic-core.example.yml")
 result = core.run(
     messages=[
         {"role": "user", "content": "Analyze today's founder intelligence signals."}
@@ -239,14 +240,29 @@ The workbench should call the same `AgenticCore` component used by non-UI caller
 
 ## Configuration
 
-`.env.example` should document tokens and optional provider defaults:
+Configuration is loaded in this order:
+
+1. `config/agentic-core.example.yml`
+2. optional gitignored `config/agentic-core.local.yml`
+3. `.env` values for provider-specific API keys
+
+`.env.example` should document provider-specific tokens:
 
 ```env
 OPENAI_API_KEY=
 OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1
+DEEPSEEK_API_KEY=
+OPENROUTER_API_KEY=
+MOONSHOT_AI_LLM_API_KEY=
 ```
 
-Example YAML should document non-secret runtime behavior:
+Saved configurations derive their API key variable from the entered config name
+by uppercasing it, replacing non-alphanumeric characters with underscores, and
+appending `_LLM_API_KEY`. For example, `Moonshot AI` uses
+`MOONSHOT_AI_LLM_API_KEY`, and `Work DeepSeek` uses
+`WORK_DEEPSEEK_LLM_API_KEY`.
+
+Example YAML should document non-secret runtime behavior and provider profiles:
 
 ```yaml
 provider:
@@ -256,6 +272,56 @@ provider:
   default_base_url: https://api.openai.com/v1
   model: gpt-5
 
+provider_profiles:
+  active: openai
+  items:
+    openai:
+      label: OpenAI
+      type: openai_compatible
+      api_key_env: OPENAI_API_KEY
+      base_url: https://api.openai.com/v1
+      model: gpt-5
+    deepseek:
+      label: DeepSeek
+      type: openai_compatible
+      api_key_env: DEEPSEEK_API_KEY
+      base_url: https://api.deepseek.com/v1
+      model: deepseek-chat
+    openrouter:
+      label: OpenRouter
+      type: openai_compatible
+      api_key_env: OPENROUTER_API_KEY
+      base_url: https://openrouter.ai/api/v1
+      model: openai/gpt-4.1
+    custom:
+      label: Custom
+      type: openai_compatible
+      api_key_env: CUSTOM_LLM_API_KEY
+      base_url: https://api.openai.com/v1
+      model: gpt-5
+```
+
+The workbench separates saved configurations from provider templates. Selecting
+a saved configuration activates an existing profile. Selecting `New
+Configuration` plus a provider template creates or updates a named local
+profile:
+
+```yaml
+provider_profiles:
+  active: work_deepseek
+  items:
+    work_deepseek:
+      label: Work DeepSeek
+      template: deepseek
+      type: openai_compatible
+      api_key_env: WORK_DEEPSEEK_LLM_API_KEY
+      base_url: https://api.deepseek.com/v1
+      model: deepseek-chat
+```
+
+The remaining example YAML keeps the shared agent, tool, and path settings:
+
+```yaml
 agent:
   system_prompt: |
     You are the Founder Intelligence Agentic Core. Use tools when they help

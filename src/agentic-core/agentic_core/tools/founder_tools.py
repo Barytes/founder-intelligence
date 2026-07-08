@@ -3,7 +3,14 @@ import json
 from typing import Any
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+def _find_repo_root(start: Path) -> Path:
+    for candidate in [start, *start.parents]:
+        if (candidate / "config").is_dir() and (candidate / "AGENTS.md").exists():
+            return candidate
+    return start.parents[2]
+
+
+REPO_ROOT = _find_repo_root(Path(__file__).resolve())
 ARTIFACT_ROOT = REPO_ROOT / "data" / "agentic"
 
 

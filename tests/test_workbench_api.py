@@ -26,6 +26,273 @@ def test_default_config_endpoint_hides_secret(monkeypatch):
     assert "secret" not in str(data)
 
 
+def test_workbench_provider_has_single_base_url_input():
+    html = (workbench_app.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="config-select"' in html
+    assert 'id="config-name-input"' in html
+    assert 'id="provider-select"' in html
+    assert 'id="base-url-input"' not in html
+    assert html.count('id="base-url-edit-input"') == 1
+
+
+def test_provider_settings_saves_api_key_to_env_without_leaking_secret(
+    monkeypatch, tmp_path
+):
+    env_path = tmp_path / ".env"
+    local_config_path = tmp_path / "agentic-core.local.yml"
+    monkeypatch.setattr(workbench_app, "ENV_PATH", env_path)
+    monkeypatch.setattr(workbench_app, "LOCAL_CONFIG", local_config_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_COMPATIBLE_BASE_URL", raising=False)
+    client = TestClient(workbench_app.app)
+
+    response = client.post(
+        "/api/provider-settings",
+        json={
+            "api_key": "sk-test-secret",
+            "base_url": "https://example.test/v1",
+            "model": "gpt-4.1",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["provider"]["api_key_configured"] is True
+    assert "sk-test-secret" not in str(data)
+    assert "OPENAI_API_KEY=sk-test-secret" in env_path.read_text(encoding="utf-8")
+    assert "OPENAI_COMPATIBLE_BASE_URL=https://example.test/v1" not in env_path.read_text(
+        encoding="utf-8"
+    )
+    assert "model: gpt-4.1" in local_config_path.read_text(encoding="utf-8")
+    assert "base_url: https://example.test/v1" in local_config_path.read_text(
+        encoding="utf-8"
+    )
+    assert data["provider"]["model"] == "gpt-4.1"
+    assert "sk-test-secret" not in str(client.get("/api/default-config").json())
+
+
+def test_provider_settings_saves_profile_specific_key_and_model(monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
+    local_config_path = tmp_path / "agentic-core.local.yml"
+    monkeypatch.setattr(workbench_app, "ENV_PATH", env_path)
+    monkeypatch.setattr(workbench_app, "LOCAL_CONFIG", local_config_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    client = TestClient(workbench_app.app)
+
+    response = client.post(
+        "/api/provider-settings",
+        json={
+            "provider_id": "deepseek",
+            "api_key": "deepseek-secret",
+            "base_url": "https://api.deepseek.com/v1",
+            "model": "deepseek-chat",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["provider"]["api_key_env"] == "DEEPSEEK_API_KEY"
+    assert data["provider"]["api_key_configured"] is True
+    assert data["provider"]["model"] == "deepseek-chat"
+    env_content = env_path.read_text(encoding="utf-8")
+    assert "DEEPSEEK_API_KEY=deepseek-secret" in env_content
+    assert "OPENAI_API_KEY=deepseek-secret" not in env_content
+    local_content = local_config_path.read_text(encoding="utf-8")
+    assert "active: deepseek" in local_content
+    assert "deepseek:" in local_content
+    assert "model: deepseek-chat" in local_content
+    assert "base_url: https://api.deepseek.com/v1" in local_content
+    assert "deepseek-secret" not in str(data)
+
+
+def test_provider_settings_creates_named_custom_provider(monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
+    local_config_path = tmp_path / "agentic-core.local.yml"
+    monkeypatch.setattr(workbench_app, "ENV_PATH", env_path)
+    monkeypatch.setattr(workbench_app, "LOCAL_CONFIG", local_config_path)
+    monkeypatch.delenv("MOONSHOT_AI_LLM_API_KEY", raising=False)
+    client = TestClient(workbench_app.app)
+
+    response = client.post(
+        "/api/provider-settings",
+        json={
+            "provider_id": "custom",
+            "config_name": "Moonshot AI",
+            "api_key": "moonshot-secret",
+            "base_url": "https://api.moonshot.cn/v1",
+            "model": "moonshot-v1-8k",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["provider"]["api_key_env"] == "MOONSHOT_AI_LLM_API_KEY"
+    assert data["provider"]["api_key_configured"] is True
+    assert data["provider"]["model"] == "moonshot-v1-8k"
+    assert "MOONSHOT_AI_LLM_API_KEY=moonshot-secret" in env_path.read_text(
+        encoding="utf-8"
+    )
+    local_content = local_config_path.read_text(encoding="utf-8")
+    assert "active: moonshot_ai" in local_content
+    assert "moonshot_ai:" in local_content
+    assert "label: Moonshot AI" in local_content
+    assert "template: custom" in local_content
+    assert "api_key_env: MOONSHOT_AI_LLM_API_KEY" in local_content
+    assert "base_url: https://api.moonshot.cn/v1" in local_content
+    assert "model: moonshot-v1-8k" in local_content
+    assert "moonshot_ai" in data["provider_profiles"]["items"]
+    assert data["provider_profiles"]["items"]["moonshot_ai"]["label"] == "Moonshot AI"
+    assert "moonshot_ai" in data["saved_configs"]["items"]
+    assert data["saved_configs"]["items"]["moonshot_ai"]["label"] == "Moonshot AI"
+    assert "moonshot-secret" not in str(data)
+
+
+def test_provider_settings_creates_named_config_from_provider_template(
+    monkeypatch, tmp_path
+):
+    env_path = tmp_path / ".env"
+    local_config_path = tmp_path / "agentic-core.local.yml"
+    monkeypatch.setattr(workbench_app, "ENV_PATH", env_path)
+    monkeypatch.setattr(workbench_app, "LOCAL_CONFIG", local_config_path)
+    client = TestClient(workbench_app.app)
+
+    response = client.post(
+        "/api/provider-settings",
+        json={
+            "provider_id": "deepseek",
+            "config_name": "Work DeepSeek",
+            "api_key": "work-secret",
+            "base_url": "https://api.deepseek.com/v1",
+            "model": "deepseek-chat",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["provider"]["api_key_env"] == "WORK_DEEPSEEK_LLM_API_KEY"
+    assert "WORK_DEEPSEEK_LLM_API_KEY=work-secret" in env_path.read_text(
+        encoding="utf-8"
+    )
+    local_content = local_config_path.read_text(encoding="utf-8")
+    assert "active: work_deepseek" in local_content
+    assert "work_deepseek:" in local_content
+    assert "label: Work DeepSeek" in local_content
+    assert "template: deepseek" in local_content
+    assert "api_key_env: WORK_DEEPSEEK_LLM_API_KEY" in local_content
+    assert data["saved_configs"]["active"] == "work_deepseek"
+    assert data["saved_configs"]["items"]["work_deepseek"]["template"] == "deepseek"
+
+
+def test_provider_settings_rejects_custom_provider_name_collision(monkeypatch, tmp_path):
+    monkeypatch.setattr(workbench_app, "ENV_PATH", tmp_path / ".env")
+    monkeypatch.setattr(workbench_app, "LOCAL_CONFIG", tmp_path / "agentic-core.local.yml")
+    client = TestClient(workbench_app.app)
+
+    response = client.post(
+        "/api/provider-settings",
+        json={
+            "provider_id": "custom",
+            "config_name": "OpenAI",
+            "api_key": "secret",
+            "base_url": "https://example.test/v1",
+            "model": "model",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "error"
+    assert any("conflicts" in error.lower() for error in data["errors"])
+
+
+def test_default_config_returns_provider_profiles_without_secrets(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-secret")
+    client = TestClient(workbench_app.app)
+
+    response = client.get("/api/default-config")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["provider_profiles"]["active"]
+    assert "openai" in data["provider_templates"]["items"]
+    assert "custom" in data["provider_templates"]["items"]
+    assert data["saved_configs"]["active"]
+    assert "openai" in data["provider_profiles"]["items"]
+    assert "deepseek" in data["provider_profiles"]["items"]
+    assert data["provider_profiles"]["items"]["openai"]["api_key_configured"] is True
+    assert data["provider_profiles"]["items"]["deepseek"]["api_key_configured"] is True
+    assert "openai-secret" not in str(data)
+    assert "deepseek-secret" not in str(data)
+
+
+def test_provider_settings_preserves_existing_env_lines(monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "OTHER_VAR=keep\nOPENAI_API_KEY=old\n# local comment\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(workbench_app, "ENV_PATH", env_path)
+    monkeypatch.setattr(workbench_app, "LOCAL_CONFIG", tmp_path / "agentic-core.local.yml")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    client = TestClient(workbench_app.app)
+
+    response = client.post(
+        "/api/provider-settings",
+        json={"api_key": "sk-new"},
+    )
+
+    assert response.status_code == 200
+    content = env_path.read_text(encoding="utf-8")
+    assert "OTHER_VAR=keep" in content
+    assert "# local comment" in content
+    assert "OPENAI_API_KEY=sk-new" in content
+    assert "OPENAI_API_KEY=old" not in content
+
+
+def test_provider_settings_preserves_existing_local_config(monkeypatch, tmp_path):
+    local_config_path = tmp_path / "agentic-core.local.yml"
+    local_config_path.write_text(
+        "agent:\n  temperature: 0.4\nprovider:\n  model: old-model\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(workbench_app, "ENV_PATH", tmp_path / ".env")
+    monkeypatch.setattr(workbench_app, "LOCAL_CONFIG", local_config_path)
+    client = TestClient(workbench_app.app)
+
+    response = client.post(
+        "/api/provider-settings",
+        json={"model": "gpt-4.1-mini"},
+    )
+
+    assert response.status_code == 200
+    content = local_config_path.read_text(encoding="utf-8")
+    assert "temperature: 0.4" in content
+    assert "model: gpt-4.1-mini" in content
+    assert response.json()["provider"]["model"] == "gpt-4.1-mini"
+
+
+def test_provider_settings_rejects_newline_values(monkeypatch, tmp_path):
+    monkeypatch.setattr(workbench_app, "ENV_PATH", tmp_path / ".env")
+    client = TestClient(workbench_app.app)
+
+    response = client.post(
+        "/api/provider-settings",
+        json={"api_key": "sk-test\nSECRET"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "error"
+    assert any("newline" in error.lower() for error in data["errors"])
+
+
 def test_root_missing_ui(monkeypatch, tmp_path):
     monkeypatch.setattr(workbench_app, "STATIC_DIR", tmp_path / "static")
     client = TestClient(workbench_app.app)

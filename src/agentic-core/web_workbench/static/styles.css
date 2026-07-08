@@ -81,7 +81,8 @@ p {
 }
 
 textarea,
-input {
+input,
+select {
   width: 100%;
   border: 1px solid #bfccd3;
   border-radius: 6px;
@@ -138,6 +139,29 @@ button:disabled {
   gap: 6px;
   font-size: 14px;
   color: #2c3a44;
+}
+
+.provider-form {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.provider-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.provider-save-status {
+  color: #2c3a44;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.provider-save-status.error {
+  color: #7a1b1b;
 }
 
 .tools {

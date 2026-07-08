@@ -13,7 +13,7 @@ DEFAULT_OPTIONS = {
   "sources" => "config/sources.yml",
   "adapter" => "data/adapter-output/rss-fetch-latest.json",
   "canonical" => "data/canonical-items/latest.json",
-  "output" => "design-demos/information-source-dashboard.html"
+  "output" => "data/dashboard/source-dashboard.html"
 }.freeze
 
 def parse_options(argv)
