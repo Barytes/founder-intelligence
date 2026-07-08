@@ -2,10 +2,9 @@ import httpx
 import pytest
 
 from agentic_core.providers import build_provider
-from agentic_core.providers.base import ProviderError
+from agentic_core.providers.base import ProviderError, ProviderToolCall
 from agentic_core.providers.openai_compatible import OpenAICompatibleProvider
 from agentic_core.schemas import ProviderConfig
-from agentic_core.providers.base import ProviderToolCall
 
 
 def test_provider_factory_builds_openai_compatible_provider():
@@ -153,6 +152,54 @@ def test_openai_compatible_requires_message_shape():
     )
 
     with pytest.raises(ProviderError, match="provider response missing choices\\[0\\]\\.message"):
+        provider.complete(messages=[{"role": "user", "content": "hi"}], tools=[], temperature=0.2)
+
+
+def test_openai_compatible_wraps_http_status_errors():
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                503,
+                json={"error": {"message": "unavailable"}},
+            )
+        )
+    )
+    provider = OpenAICompatibleProvider(
+        ProviderConfig(
+            type="openai_compatible",
+            api_key_env="TEST_KEY",
+            api_key="secret",
+            base_url="https://example.test/v1",
+            model="test-model",
+        ),
+        client=client,
+    )
+
+    with pytest.raises(ProviderError, match="provider HTTP error"):
+        provider.complete(messages=[{"role": "user", "content": "hi"}], tools=[], temperature=0.2)
+
+
+def test_openai_compatible_wraps_invalid_json_response():
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                content=b"{invalid-json",
+            )
+        )
+    )
+    provider = OpenAICompatibleProvider(
+        ProviderConfig(
+            type="openai_compatible",
+            api_key_env="TEST_KEY",
+            api_key="secret",
+            base_url="https://example.test/v1",
+            model="test-model",
+        ),
+        client=client,
+    )
+
+    with pytest.raises(ProviderError, match="provider returned invalid JSON"):
         provider.complete(messages=[{"role": "user", "content": "hi"}], tools=[], temperature=0.2)
 
 

@@ -1,5 +1,8 @@
 .DS_Store
 .env
+__pycache__/
+*.pyc
+uv.lock
 Git_Trending.rtf
 data/adapter-output/*.json
 data/canonical-items/*.json
