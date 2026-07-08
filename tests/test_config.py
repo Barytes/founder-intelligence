@@ -37,6 +37,9 @@ paths:
     assert config.provider.api_key == "secret-value"
     assert config.provider.base_url == "https://example.test/v1"
     assert config.provider.safe_dict()["api_key_configured"] is True
+    assert "secret-value" not in repr(config.provider)
+    assert "secret-value" not in str(config.provider)
+    assert "secret-value" not in str(config.provider.model_dump())
     assert "secret-value" not in str(config.provider.safe_dict())
     assert config.agent.max_turns == 4
     assert config.tools["read_signals"].enabled is True

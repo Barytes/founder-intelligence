@@ -12,7 +12,7 @@ class ProviderConfig(BaseModel):
     base_url_env: str | None = None
     default_base_url: str = "https://api.openai.com/v1"
     model: str
-    api_key: str | None = Field(default=None, exclude=True)
+    api_key: str | None = Field(default=None, exclude=True, repr=False)
     base_url: str | None = None
 
     def safe_dict(self) -> dict[str, Any]:
