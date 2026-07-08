@@ -1,9 +1,14 @@
 .DS_Store
 .env
+config/agentic-core.local.yml
+__pycache__/
+*.pyc
+uv.lock
 Git_Trending.rtf
 data/adapter-output/*.json
 data/canonical-items/*.json
 data/signals/*.json
 data/dashboard/*
+data/agentic/
 data/app/
 data/store/**/*.jsonl

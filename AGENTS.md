@@ -3,6 +3,7 @@ For future agents working in this repository:
 - Read `docs/index.md` first for the documentation map.
 - Treat files under `config/` as stable configuration for the current MVP unless the user explicitly asks to change them.
 - Treat files under `src/` as the implemented demo source code. The current implemented fetch path is RSS-only; do not assume MCP/API/HTML sources are fetchable just because templates or contracts mention them.
+- Put Codex-generated workspace artifacts under `codex-workspace/` instead of project docs or source directories. For example, planning/spec artifacts that previously lived under `docs/superpowers/` belong under `codex-workspace/docs/superpowers/`.
 
 ### 多分支并行开发
 - 长期并行开发多个 feature 时，每个 feature 分支必须使用独立 git worktree；不要在同一工作目录中反复切换分支。各分支应尽量只修改自己的功能边界，公共接口、数据合同、运行状态目录或共享核心逻辑需要先形成明确文档/基础分支后再分别接入。

@@ -6,6 +6,32 @@
 
 ## 当前功能
 
+当前 demo 的目标是把多个 RSSHub 信息源抓取下来，转换成统一结构，做本地存储，再根据用户画像和规则生成每日情报看板。
+
+它已经具备：
+
+- 从 RSSHub 抓取 RSS/Atom 信息源
+- 将原始条目转换为 canonical item
+- 清理 HTML、标准化链接和时间
+- 生成内容 hash 和去重 key
+- 对条目打质量标记
+- 将 canonical item 追加写入 JSONL
+- 根据用户画像和规则计算重要性、相关性和总分
+- 生成 `data/signals/latest.json`
+- 生成 `data/dashboard/latest.md`
+- 生成 `data/dashboard/latest.html`
+- 生成辅助信息源看板 `data/dashboard/source-dashboard.html`
+
+它暂时不包含：
+
+- 常驻调度器
+- 数据库
+- Chat UI
+- LLM 总结
+- Agentic planning
+- 自动行动执行
+- 长期记忆
+- 可运行的 MCP/API/HTML fetcher
 当前实现已经具备：
 
 - 从 RSSHub 抓取启用的 RSS/Atom 信息源。
@@ -174,6 +200,11 @@ data/dashboard/latest.md
 src/web_app.rb
 ```
 
+然后生成：
+
+```text
+data/dashboard/source-dashboard.html
+```
 ## 当前边界
 
 - 当前抓取路径只有 RSS。

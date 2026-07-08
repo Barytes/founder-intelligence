@@ -56,6 +56,31 @@ This version focuses on the information aggregator:
 It intentionally does not include a full ontology, chat interface, account
 system, long-term memory, or automatic action execution.
 
+## Agentic Core Workbench
+
+The Agentic Core is a local-only Python component and FastAPI workbench.
+
+Create a local config from the example:
+
+```bash
+cp config/agentic-core.example.yml config/agentic-core.yml
+cp .env.example .env
+```
+
+Set `OPENAI_API_KEY` in `.env`, then run:
+
+```bash
+PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 8787
+```
+
+Open:
+
+```text
+http://127.0.0.1:8787
+```
+
+The workbench reads existing pipeline artifacts such as `data/signals/latest.json` and writes agentic outputs under `data/agentic/`.
+
 ## Documentation
 
 Start with `docs/index.md`.

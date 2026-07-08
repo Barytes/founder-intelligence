@@ -7,6 +7,7 @@ Start here when working on this repository.
 - [Current Runtime Architecture](current-demo-architecture.md): explains the current RSS-only pipeline, Web app wrapper, runtime boundaries, and workflow.
 - [Current Web App Architecture](web-app/architecture.md): explains the implemented local Web app architecture, routes, frontend data flow, refresh runner, and runtime boundaries.
 - [YAML Deterministic Pipeline](yaml-deterministic-pipeline.md): explains how YAML configuration drives the deterministic pipeline, what each YAML file does, and how each one participates in code flow.
+- [Agent Core](agent-core/index.md): explains the implemented Agentic Core architecture, runtime flow, configuration model, workbench, and known risks.
 
 ## Feature Documents
 
