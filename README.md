@@ -19,10 +19,28 @@ ruby src/store_canonical_jsonl.rb --input data/canonical-items/latest.json --sto
 ruby src/build_signals.rb --input data/canonical-items/latest.json --profile config/user-profile.yml --rules config/signal-rules.yml
 ```
 
-The dashboard is written to:
+The generated signal artifacts are written to:
 
 - `data/dashboard/latest.md`
-- `data/dashboard/latest.html`
+- `data/dashboard/generated-latest.html`
+
+`data/dashboard/generated-latest.html` is a transitional static HTML artifact from `src/build_signals.rb`.
+The current Web app shell lives under `src/web/public/`.
+
+## Run Web App
+
+```bash
+ruby src/web_app.rb --port 4567
+```
+
+Then open:
+
+```text
+http://127.0.0.1:4567/
+```
+
+The Web app is local-only by default and reads the latest successful signals from `data/signals/latest.json`.
+It can trigger a manual RSS-only refresh and edit `config/user-profile.yml` plus `config/sources.yml` from the browser.
 
 ## MVP Scope
 

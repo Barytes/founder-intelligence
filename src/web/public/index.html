@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Founder Intelligence - 信号控制台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="console">
+      <header class="command-bar">
+        <section class="title-block">
+          <div class="title-head">
+            <small>Founder Intelligence / 本地</small>
+            <div class="title-actions">
+              <button class="user-md-button" id="refresh-button" type="button">刷新</button>
+              <button class="user-md-button" id="open-user-profile" type="button">编辑 user-profile.yml</button>
+            </div>
+          </div>
+          <h1>信号控制台</h1>
+          <p id="refresh-status">读取本地最新成功信号。</p>
+        </section>
+        <section class="stat-block">
+          <b id="stat-total">-</b>
+          <span>已处理资讯</span>
+        </section>
+        <section class="stat-block">
+          <b id="stat-high">-</b>
+          <span>高信号内容</span>
+        </section>
+        <section class="stat-block">
+          <b id="stat-sources">-</b>
+          <span>可运行来源</span>
+        </section>
+      </header>
+
+      <main class="grid">
+        <aside class="panel">
+          <header class="panel-header">
+            <h2>运行栈</h2>
+            <i class="status-dot" aria-hidden="true"></i>
+          </header>
+          <section class="pipeline">
+            <div class="step">
+              <div class="step-code">01</div>
+              <div><b>RSSHub 抓取</b><span>当前实现只运行 RSS source。</span></div>
+            </div>
+            <div class="step">
+              <div class="step-code">02</div>
+              <div><b>标准化</b><span>转换为 canonical item。</span></div>
+            </div>
+            <div class="step">
+              <div class="step-code">03</div>
+              <div><b>规则评分</b><span>根据 user profile 和 signal rules 计算分数。</span></div>
+            </div>
+            <div class="step">
+              <div class="step-code">04</div>
+              <div><b>信号输出</b><span>发布最近一次成功 signals。</span></div>
+            </div>
+          </section>
+          <section class="source-folders" id="source-folders"></section>
+        </aside>
+
+        <section class="panel main-panel">
+          <header class="panel-header">
+            <h2>优先队列</h2>
+            <nav class="filters" id="filters"></nav>
+          </header>
+          <div class="run-meta" id="generated-at">-</div>
+          <section class="signal-grid" id="signal-grid"></section>
+        </section>
+
+        <aside class="panel detail-panel">
+          <header class="panel-header">
+            <h2>信号追踪</h2>
+            <span id="input-run-id">-</span>
+          </header>
+          <section class="detail-body" id="detail-body"></section>
+        </aside>
+      </main>
+    </div>
+
+    <div class="user-md-modal" id="user-profile-modal" hidden>
+      <section class="user-md-dialog" role="dialog" aria-modal="true" aria-labelledby="user-profile-title">
+        <header class="user-md-header">
+          <div>
+            <h2 id="user-profile-title">user-profile.yml</h2>
+            <span>保存后下一次刷新会参与后端评分</span>
+          </div>
+          <button class="user-md-close" id="close-user-profile" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="user-md-body">
+          <div class="user-md-editor">
+            <textarea id="user-profile-text" spellcheck="false"></textarea>
+          </div>
+          <aside class="user-md-preview">
+            <h3>影响范围</h3>
+            <dl>
+              <div>
+                <dt>后端评分</dt>
+                <dd>保存到 config/user-profile.yml。</dd>
+              </div>
+              <div>
+                <dt>刷新生效</dt>
+                <dd>下一次 refresh 会读取这份 YAML。</dd>
+              </div>
+              <div>
+                <dt>格式要求</dt>
+                <dd>必须是合法 YAML，并包含 version 字段。</dd>
+              </div>
+            </dl>
+          </aside>
+        </div>
+        <footer class="user-md-footer">
+          <span class="user-md-status" id="user-profile-status">未保存</span>
+          <div class="user-md-actions">
+            <label class="user-md-action" for="user-profile-file">导入</label>
+            <input id="user-profile-file" type="file" accept=".yml,.yaml,text/yaml,text/plain" hidden />
+            <button class="user-md-action" id="reload-user-profile" type="button">重新读取</button>
+            <button class="user-md-action primary" id="save-user-profile" type="button">保存</button>
+            <button class="user-md-action" id="download-user-profile" type="button">下载 user-profile.yml</button>
+          </div>
+        </footer>
+      </section>
+    </div>
+
+    <div class="folder-overlay" id="folder-overlay" hidden>
+      <section class="folder-expanded" role="dialog" aria-modal="true" aria-labelledby="folder-title">
+        <header class="folder-expanded-header">
+          <div>
+            <h2 id="folder-title">信息源</h2>
+            <span id="folder-subtitle">启用状态会写入 config/sources.yml</span>
+          </div>
+          <button class="folder-close" id="close-folder" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="expanded-source-grid" id="expanded-source-grid"></div>
+        <section class="source-config-panel" id="source-config-panel" hidden>
+          <header>
+            <h3>config/sources.yml</h3>
+            <span>保存后下一次刷新会读取新的 enabled RSS 来源</span>
+          </header>
+          <textarea id="source-config-text" spellcheck="false"></textarea>
+        </section>
+        <footer class="folder-expanded-footer">
+          <span id="folder-status">刷新会读取 config/sources.yml 中 enabled=true 的 RSS 来源</span>
+          <div class="folder-actions">
+            <button class="folder-reset" id="edit-source-config" type="button">编辑 sources.yml</button>
+            <button class="folder-reset" id="save-source-config" type="button" hidden>保存 sources.yml</button>
+            <button class="folder-reset" id="reset-source-library" type="button">重新读取配置</button>
+          </div>
+        </footer>
+      </section>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

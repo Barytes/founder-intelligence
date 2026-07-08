@@ -5,4 +5,5 @@ data/adapter-output/*.json
 data/canonical-items/*.json
 data/signals/*.json
 data/dashboard/*
+data/app/
 data/store/**/*.jsonl

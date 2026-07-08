@@ -29,13 +29,13 @@ Optional fields include `next_cursor`, `rate_limit`, and `raw_feed_metadata`.
 
 ## Source Types
 
-`rss` fetchers read `connection.rss_url`, usually from RSSHub.
+`rss` fetchers read `connection.rss_url`, usually from RSSHub. This is the only implemented fetch path today.
 
-`mcp` fetchers call a named tool such as `xiaohongshu-mcp` or `wechat-mcp`. These are expected to handle platform-specific auth and may return cursors.
+`mcp` fetchers would call a named tool such as `xiaohongshu-mcp` or `wechat-mcp`. These are design templates only; no runnable MCP fetcher exists in the current code.
 
-`api` fetchers call HTTP APIs directly. They should expose native ids and pagination state without doing final normalization.
+`api` fetchers would call HTTP APIs directly. They should expose native ids and pagination state without doing final normalization. No runnable API fetcher exists in the current code.
 
-`html` fetchers scrape pages using selectors. They should be treated as fragile and must report selector failures explicitly.
+`html` fetchers would scrape pages using selectors. They should be treated as fragile and must report selector failures explicitly. No runnable HTML fetcher exists in the current code.
 
 ## Boundary
 
@@ -57,8 +57,8 @@ Ingestion responsibilities:
 - deduplicate
 - apply quality gates
 
-## Next Implementation Step
+## Current Implementation
 
-When code starts, define a single `FetcherAdapter` interface first, then implement the RSS adapter before MCP/API/HTML adapters. RSSHub is already running locally, so RSS is the lowest-risk first implementation target.
+The current local implementation is `src/fetch_rss.rb`. It reads enabled RSS sources from `config/sources.yml`, fetches RSSHub XML, and writes adapter output JSON without applying final ingestion normalization.
 
-The first local implementation is `src/fetch_rss.rb`. It reads enabled RSS sources from `config/sources.yml`, fetches RSSHub XML, and writes adapter output JSON without applying final ingestion normalization.
+Future MCP/API/HTML adapters should conform to the same adapter output shape before being wired into the main refresh path.

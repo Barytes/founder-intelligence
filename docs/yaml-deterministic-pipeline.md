@@ -33,7 +33,6 @@ config/ingestion-rules.yml
 config/signal-rules.yml
 config/user-profile.yml
 config/fetcher-contract.yml
-config/rss-sources.yml
 ```
 
 其中，主 demo 流程实际读取的是：
@@ -48,8 +47,6 @@ config/user-profile.yml
 `config/docker-compose.yml` 被 Docker Compose 使用，不被 Ruby 读取。
 
 `config/fetcher-contract.yml` 是 fetcher adapter 的设计契约，当前不被 Ruby 主流程读取。
-
-`config/rss-sources.yml` 是旧版或简化版 RSS 源配置，当前不被主流程读取。
 
 ## `config/docker-compose.yml`
 
@@ -250,14 +247,6 @@ output: source_id/source_type/provider/fetched_at/status/items/errors
 
 当前代码没有读取这个文件。它的价值在于后续可以升级成 schema validation 或测试 fixture，要求所有 fetcher 输出都满足同一 contract。
 
-## `config/rss-sources.yml`
-
-这个文件是旧版或简化版 RSS source 配置。
-
-当前没有 Ruby 脚本读取它。主 source registry 是 `config/sources.yml`。
-
-后续如果不再需要，可以删除；如果保留，应明确标记为 legacy example。
-
 ## 代码流程中的 YAML 运作
 
 完整流程如下：
@@ -305,7 +294,7 @@ src/build_signals.rb
         v
 data/signals/latest.json
 data/dashboard/latest.md
-data/dashboard/latest.html
+data/dashboard/generated-latest.html
 ```
 
 `src/store_canonical_jsonl.rb` 不读取 YAML。它只读取 canonical JSON，并追加写入 JSONL。

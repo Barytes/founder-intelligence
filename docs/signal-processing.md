@@ -16,7 +16,7 @@ Outputs:
 
 - `data/signals/latest.json`
 - `data/dashboard/latest.md`
-- `data/dashboard/latest.html`
+- `data/dashboard/generated-latest.html`
 
 Responsibilities:
 
@@ -45,5 +45,5 @@ ruby src/build_signals.rb \
   --rules config/signal-rules.yml \
   --output data/signals/latest.json \
   --markdown data/dashboard/latest.md \
-  --html data/dashboard/latest.html
+  --html data/dashboard/generated-latest.html
 ```
