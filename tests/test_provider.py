@@ -21,6 +21,31 @@ def test_provider_factory_builds_openai_compatible_provider():
     assert isinstance(provider, OpenAICompatibleProvider)
 
 
+def test_openai_compatible_uses_timeout_seconds_for_owned_client(monkeypatch):
+    captured: dict[str, float] = {}
+
+    class FakeClient:
+        def __init__(self, *, timeout: float, **_kwargs):
+            captured["timeout"] = timeout
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("agentic_core.providers.openai_compatible.httpx.Client", FakeClient)
+    OpenAICompatibleProvider(
+        ProviderConfig(
+            type="openai_compatible",
+            api_key_env="TEST_KEY",
+            api_key="secret",
+            base_url="https://example.test/v1",
+            model="test-model",
+        ),
+        timeout_seconds=12.5,
+    )
+
+    assert captured["timeout"] == 12.5
+
+
 def test_openai_compatible_requires_api_key():
     config = ProviderConfig(
         type="openai_compatible",

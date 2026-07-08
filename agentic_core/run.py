@@ -1,7 +1,10 @@
 import argparse
 import json
+from pathlib import Path
 
 from agentic_core import AgenticCore
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -11,10 +14,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _resolve_config_path(raw_path: str) -> Path:
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+
+    resolved = path.resolve()
+    try:
+        resolved.relative_to(REPO_ROOT)
+    except ValueError as exc:
+        raise ValueError("config path outside repository") from exc
+
+    if resolved.suffix.lower() not in {".yml", ".yaml"}:
+        raise ValueError("config path must be YAML")
+
+    return resolved
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
-        core = AgenticCore.from_config(args.config)
+        config_path = _resolve_config_path(args.config)
+        core = AgenticCore.from_config(config_path)
         result = core.run(messages=[{"role": "user", "content": args.prompt}], context={})
     except Exception as exc:
         print(

@@ -276,3 +276,22 @@ def test_core_records_tool_error_and_tool_error_message():
     assert result.tool_calls[0].error == "division by zero"
     tool_messages = [m for m in result.messages if m.get("role") == "tool"]
     assert tool_messages and tool_messages[0]["content"].startswith("ERROR:")
+
+
+def test_core_builds_provider_with_configured_timeout(monkeypatch):
+    captured: dict[str, float] = {}
+
+    class FakeProvider:
+        pass
+
+    def fake_build_provider(_config, timeout_seconds=60):
+        captured["timeout_seconds"] = timeout_seconds
+        return FakeProvider()
+
+    monkeypatch.setattr("agentic_core.core.build_provider", fake_build_provider)
+
+    config = make_config()
+    config.agent.timeout_seconds = 17.25
+    AgenticCore(config=config)
+
+    assert captured["timeout_seconds"] == 17.25

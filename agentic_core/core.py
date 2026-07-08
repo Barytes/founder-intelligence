@@ -21,7 +21,14 @@ class AgenticCore:
         tools: ToolRegistry | None = None,
     ):
         self.config = config
-        self.provider = provider or build_provider(config.provider)
+        self.provider = (
+            provider
+            if provider is not None
+            else build_provider(
+                config.provider,
+                timeout_seconds=config.agent.timeout_seconds,
+            )
+        )
         self.tools = tools or build_default_registry(config.tools)
 
     @classmethod

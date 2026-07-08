@@ -8,4 +8,5 @@ data/adapter-output/*.json
 data/canonical-items/*.json
 data/signals/*.json
 data/dashboard/*
+data/agentic/
 data/store/**/*.jsonl

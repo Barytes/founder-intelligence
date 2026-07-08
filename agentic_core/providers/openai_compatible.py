@@ -8,11 +8,16 @@ from agentic_core.schemas import ProviderConfig
 
 
 class OpenAICompatibleProvider:
-    def __init__(self, config: ProviderConfig, client: httpx.Client | None = None):
+    def __init__(
+        self,
+        config: ProviderConfig,
+        client: httpx.Client | None = None,
+        timeout_seconds: float = 60,
+    ):
         if not config.api_key:
             raise ValueError(f"missing API key env var: {config.api_key_env}")
         self.config = config
-        self.client = client or httpx.Client(timeout=60)
+        self.client = client or httpx.Client(timeout=timeout_seconds)
         self._owns_client = client is None
 
     def close(self) -> None:

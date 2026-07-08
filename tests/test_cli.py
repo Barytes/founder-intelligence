@@ -61,3 +61,28 @@ def test_main_handles_init_errors(monkeypatch, capsys):
     assert exit_code == 1
     assert payload["status"] == "error"
     assert "missing config" in payload["errors"][0]
+
+
+def test_main_rejects_outside_repo_config_path(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(cli, "REPO_ROOT", tmp_path)
+
+    exit_code = cli.main(["--config", "../outside.yml", "--prompt", "hello"])
+    captured = capsys.readouterr().out
+    payload = json.loads(captured)
+
+    assert exit_code == 1
+    assert payload["status"] == "error"
+    assert "config path outside repository" in payload["errors"][0]
+
+
+def test_main_rejects_non_yaml_config_path(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(cli, "REPO_ROOT", tmp_path)
+    (tmp_path / "config.txt").write_text("{}", encoding="utf-8")
+
+    exit_code = cli.main(["--config", "config.txt", "--prompt", "hello"])
+    captured = capsys.readouterr().out
+    payload = json.loads(captured)
+
+    assert exit_code == 1
+    assert payload["status"] == "error"
+    assert "config path must be YAML" in payload["errors"][0]
