@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any
 
@@ -48,15 +49,32 @@ class AgenticCore:
             *normalize_messages(messages),
         ]
         tool_logs: list[ToolCallLog] = []
+        artifact_paths: list[str] = []
         usage: dict[str, Any] = {}
 
         for _turn in range(self.config.agent.max_turns):
-            response = self.provider.complete(
-                messages=conversation,
-                tools=self.tools.provider_tools(),
-                temperature=self.config.agent.temperature,
-            )
-            usage.update(response.usage)
+            try:
+                response = self.provider.complete(
+                    messages=conversation,
+                    tools=self.tools.provider_tools(),
+                    temperature=self.config.agent.temperature,
+                )
+            except Exception as exc:
+                return RunResult(
+                    status="error",
+                    messages=conversation,
+                    tool_calls=tool_logs,
+                    artifact_paths=artifact_paths,
+                    usage=usage,
+                    errors=[str(exc)],
+                )
+
+            for key, value in response.usage.items():
+                existing = usage.get(key)
+                if isinstance(existing, (int, float)) and isinstance(value, (int, float)):
+                    usage[key] = existing + value
+                else:
+                    usage[key] = value
             conversation.append(response.message)
 
             if not response.tool_calls:
@@ -66,6 +84,7 @@ class AgenticCore:
                     messages=conversation,
                     final_text=final_text,
                     tool_calls=tool_logs,
+                    artifact_paths=artifact_paths,
                     usage=usage,
                 )
 
@@ -74,12 +93,22 @@ class AgenticCore:
                 try:
                     result = self.tools.run(call.name, call.arguments, run_context)
                     log.result = result
+                    if isinstance(result, dict) and "artifact_paths" in result:
+                        artifact_paths.extend(
+                            str(artifact_path)
+                            for artifact_path in result["artifact_paths"]
+                            if isinstance(artifact_path, str)
+                        )
+                    try:
+                        tool_content = json.dumps(result, ensure_ascii=False)
+                    except (TypeError, ValueError):
+                        tool_content = str(result)
                     conversation.append(
                         {
                             "role": "tool",
                             "tool_call_id": call.id,
                             "name": call.name,
-                            "content": str(result),
+                            "content": tool_content,
                         }
                     )
                 except Exception as exc:
@@ -98,6 +127,7 @@ class AgenticCore:
             status="error",
             messages=conversation,
             tool_calls=tool_logs,
+            artifact_paths=artifact_paths,
             usage=usage,
             errors=["max turns reached"],
         )
