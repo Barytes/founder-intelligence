@@ -155,6 +155,30 @@ def test_openai_compatible_requires_message_shape():
         provider.complete(messages=[{"role": "user", "content": "hi"}], tools=[], temperature=0.2)
 
 
+def test_openai_compatible_requires_dict_response_shape():
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                json=[],
+            )
+        )
+    )
+    provider = OpenAICompatibleProvider(
+        ProviderConfig(
+            type="openai_compatible",
+            api_key_env="TEST_KEY",
+            api_key="secret",
+            base_url="https://example.test/v1",
+            model="test-model",
+        ),
+        client=client,
+    )
+
+    with pytest.raises(ProviderError, match="provider response missing choices\\[0\\]\\.message"):
+        provider.complete(messages=[{"role": "user", "content": "hi"}], tools=[], temperature=0.2)
+
+
 def test_openai_compatible_wraps_http_status_errors():
     client = httpx.Client(
         transport=httpx.MockTransport(
