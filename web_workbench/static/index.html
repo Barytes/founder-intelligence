@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agentic Core Workbench</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="panel chat-panel">
+        <header class="chat-header">
+          <h1>Agentic Core</h1>
+          <p id="token-status" class="token-status">Checking provider configuration…</p>
+        </header>
+
+        <section id="messages" class="messages" aria-live="polite" aria-label="Chat messages"></section>
+
+        <form id="chat-form" class="composer">
+          <label for="message-input" class="sr-only">Message</label>
+          <textarea
+            id="message-input"
+            placeholder="Ask about current founder signals"
+            rows="3"
+          ></textarea>
+          <button type="submit" id="chat-submit">Send</button>
+        </form>
+
+        <p id="error-banner" class="error-banner" role="status" aria-live="polite" hidden></p>
+      </section>
+
+      <aside class="panel side-panel">
+        <section class="panel-section">
+          <h2>Provider</h2>
+          <label class="field">
+            Model
+            <input id="model-input" readonly value="—" />
+          </label>
+          <label class="field">
+            Base URL
+            <input id="base-url-input" readonly value="—" />
+          </label>
+        </section>
+
+        <section class="panel-section">
+          <h2>Tools</h2>
+          <div id="tools" class="tools"></div>
+        </section>
+
+        <section class="panel-section">
+          <h2>Tool Calls</h2>
+          <pre id="tool-log" aria-label="Tool call log">[]</pre>
+        </section>
+      </aside>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
