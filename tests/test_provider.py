@@ -2,8 +2,10 @@ import httpx
 import pytest
 
 from agentic_core.providers import build_provider
+from agentic_core.providers.base import ProviderError
 from agentic_core.providers.openai_compatible import OpenAICompatibleProvider
 from agentic_core.schemas import ProviderConfig
+from agentic_core.providers.base import ProviderToolCall
 
 
 def test_provider_factory_builds_openai_compatible_provider():
@@ -64,3 +66,150 @@ def test_openai_compatible_parses_final_text_response():
     assert response.message == {"role": "assistant", "content": "hello"}
     assert response.tool_calls == []
     assert response.usage == {"total_tokens": 7}
+
+
+def test_openai_compatible_parses_tool_calls():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": "tool-1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "echo",
+                                        "arguments": "{ \"value\": 123 }",
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ],
+                "usage": {"total_tokens": 16},
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    provider = OpenAICompatibleProvider(
+        ProviderConfig(
+            type="openai_compatible",
+            api_key_env="TEST_KEY",
+            api_key="secret",
+            base_url="https://example.test/v1",
+            model="test-model",
+        ),
+        client=client,
+    )
+
+    response = provider.complete(
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[{"type": "function", "function": {"name": "echo", "description": "", "parameters": {}}}],
+        temperature=0.2,
+    )
+
+    assert response.message == {
+        "role": "assistant",
+        "tool_calls": [
+            {
+                "id": "tool-1",
+                "type": "function",
+                "function": {"name": "echo", "arguments": "{ \"value\": 123 }"},
+            }
+        ],
+    }
+    assert response.tool_calls == [
+        ProviderToolCall(
+            id="tool-1",
+            name="echo",
+            arguments={"value": 123},
+        )
+    ]
+    assert response.usage == {"total_tokens": 16}
+
+
+def test_openai_compatible_requires_message_shape():
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                json={"usage": {"total_tokens": 1}},
+            )
+        )
+    )
+    provider = OpenAICompatibleProvider(
+        ProviderConfig(
+            type="openai_compatible",
+            api_key_env="TEST_KEY",
+            api_key="secret",
+            base_url="https://example.test/v1",
+            model="test-model",
+        ),
+        client=client,
+    )
+
+    with pytest.raises(ProviderError, match="provider response missing choices\\[0\\]\\.message"):
+        provider.complete(messages=[{"role": "user", "content": "hi"}], tools=[], temperature=0.2)
+
+
+def test_openai_compatible_invalid_tool_call_arguments_json():
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": "tool-1",
+                                    "function": {
+                                        "name": "broken_tool",
+                                        "arguments": "{ invalid json }",
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    provider = OpenAICompatibleProvider(
+        ProviderConfig(
+            type="openai_compatible",
+            api_key_env="TEST_KEY",
+            api_key="secret",
+            base_url="https://example.test/v1",
+            model="test-model",
+        ),
+        client=client,
+    )
+
+    with pytest.raises(ProviderError, match="invalid tool call arguments JSON.*broken_tool"):
+        provider.complete(messages=[{"role": "user", "content": "hi"}], tools=[], temperature=0.2)
+
+
+def test_openai_compatible_close_keeps_injected_client_open():
+    client = httpx.Client()
+    provider = OpenAICompatibleProvider(
+        ProviderConfig(
+            type="openai_compatible",
+            api_key_env="TEST_KEY",
+            api_key="secret",
+            base_url="https://example.test/v1",
+            model="test-model",
+        ),
+        client=client,
+    )
+
+    provider.close()
+
+    assert client.is_closed is False
+    client.close()

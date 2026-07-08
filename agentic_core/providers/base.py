@@ -16,6 +16,10 @@ class ProviderResponse:
     usage: dict[str, Any] = field(default_factory=dict)
 
 
+class ProviderError(RuntimeError):
+    """Raised when a provider returns malformed or invalid data."""
+
+
 class Provider(Protocol):
     def complete(
         self,
