@@ -53,6 +53,8 @@ class OpenAICompatibleProvider:
             data = response.json()
         except ValueError as exc:
             raise ProviderError("provider returned invalid JSON") from exc
+        if not isinstance(data, dict):
+            raise ProviderError("provider response missing choices[0].message")
 
         choices = data.get("choices")
         if not isinstance(choices, list) or not choices:

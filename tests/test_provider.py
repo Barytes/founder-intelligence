@@ -196,6 +196,80 @@ def test_openai_compatible_invalid_tool_call_arguments_json():
         provider.complete(messages=[{"role": "user", "content": "hi"}], tools=[], temperature=0.2)
 
 
+@pytest.mark.parametrize(
+    "tool_call",
+    [
+        {},
+        {"function": "not-a-dict"},
+    ],
+)
+def test_openai_compatible_invalid_tool_call_function_shape(tool_call):
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "tool_calls": [tool_call],
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    provider = OpenAICompatibleProvider(
+        ProviderConfig(
+            type="openai_compatible",
+            api_key_env="TEST_KEY",
+            api_key="secret",
+            base_url="https://example.test/v1",
+            model="test-model",
+        ),
+        client=client,
+    )
+
+    with pytest.raises(ProviderError, match="provider response has invalid tool call"):
+        provider.complete(messages=[{"role": "user", "content": "hi"}], tools=[], temperature=0.2)
+
+
+@pytest.mark.parametrize("name", [None, "", 123])
+def test_openai_compatible_invalid_tool_call_name(name):
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {"function": {"name": name}},
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    provider = OpenAICompatibleProvider(
+        ProviderConfig(
+            type="openai_compatible",
+            api_key_env="TEST_KEY",
+            api_key="secret",
+            base_url="https://example.test/v1",
+            model="test-model",
+        ),
+        client=client,
+    )
+
+    with pytest.raises(ProviderError, match="provider response has invalid tool call"):
+        provider.complete(messages=[{"role": "user", "content": "hi"}], tools=[], temperature=0.2)
+
+
 def test_openai_compatible_close_keeps_injected_client_open():
     client = httpx.Client()
     provider = OpenAICompatibleProvider(
