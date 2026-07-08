@@ -6,6 +6,7 @@ Start here when working on this repository.
 
 - [Current Demo Architecture](current-demo-architecture.md): explains the current demo's functionality, architecture, runtime boundaries, and workflow.
 - [YAML Deterministic Pipeline](yaml-deterministic-pipeline.md): explains how YAML configuration drives the deterministic pipeline, what each YAML file does, and how each one participates in code flow.
+- [Agentic Core Design](superpowers/specs/2026-07-08-agentic-core-design.md): explains the approved Agentic Core component, provider/tool boundaries, local workbench, and security scope.
 
 ## Supporting Documents
 
