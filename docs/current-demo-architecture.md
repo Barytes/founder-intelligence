@@ -1,6 +1,6 @@
 # 当前 Runtime 架构与工作流程
 
-本文描述 Founder Intelligence 当前真实运行边界：底层是本地确定性 RSS-only 信息聚合 pipeline，上层是一个本地 Web app 控制台。Web app 不重写抓取、ingestion、存储或评分逻辑；它负责展示最新成功 signals、编辑允许暴露的配置，并触发一次同步 refresh。
+本文描述 Founder Intelligence 当前真实运行边界：底层是本地确定性 RSS-only 信息聚合 pipeline，上层是一个 FastAPI 本地 Web app 控制台。Web app 不重写抓取、ingestion、存储或评分逻辑；它负责展示最新成功 signals、编辑允许暴露的配置，并触发一次同步 refresh。
 
 更细的 Web app 路由、前端和 runner 说明见 [web-app/architecture.md](web-app/architecture.md)。
 
@@ -26,9 +26,9 @@
 
 - 常驻调度器
 - 数据库
-- Chat UI
-- LLM 总结
-- Agentic planning
+- 远程多人 Chat UI
+- 自动 LLM 总结
+- 无边界 Agentic planning
 - 自动行动执行
 - 长期记忆
 - 可运行的 MCP/API/HTML fetcher
@@ -42,9 +42,10 @@
 - 将 canonical item 追加写入 JSONL store。
 - 根据 `config/user-profile.yml` 和 `config/signal-rules.yml` 计算重要性、相关性和总分。
 - 生成 `data/signals/latest.json` 和 `data/dashboard/latest.md`。
-- 通过 `src/web_app.rb` 启动本地 Web app，读取最新成功 signals。
+- 通过 `web_workbench.app` 启动统一 FastAPI 本地 Web app，读取最新成功 signals。
+- 在同一 HTTP 服务下通过 `/agent` 提供 Agentic Core 工作台。
 - Web app 可编辑 `config/user-profile.yml` 和 `config/sources.yml`。
-- Web app 可手动触发一次 RSS-only refresh。
+- Web app 可手动触发一次 RSS-only refresh，refresh 暂时仍调用现有 Ruby scripts。
 
 当前实现不包含：
 
@@ -98,7 +99,7 @@ data/dashboard/generated-latest.html
 启动命令：
 
 ```bash
-ruby src/web_app.rb --port 4567
+FI_AUTO_START_RSSHUB=1 PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 4567
 ```
 
 访问地址：
@@ -107,7 +108,7 @@ ruby src/web_app.rb --port 4567
 http://127.0.0.1:4567/
 ```
 
-Web app 默认绑定 `127.0.0.1`。页面读取 `data/signals/latest.json` 展示最新成功 signals；点击刷新时由 `src/web/pipeline_runner.rb` 顺序调用 CLI pipeline。
+Web app 默认绑定 `127.0.0.1`。页面读取 `data/signals/latest.json` 展示最新成功 signals；点击刷新时由 `src/agentic-core/web_workbench/pipeline_runner.py` 顺序调用 Ruby CLI pipeline。设置 `FI_AUTO_START_RSSHUB=1` 时，FastAPI startup 会先尝试运行 `docker compose -f config/docker-compose.yml up -d rsshub`。
 
 ## 架构分层
 
@@ -158,9 +159,9 @@ data/store/runs/YYYY-MM-DD.jsonl
 
 它是 append-only 文件存储，不是数据库。
 
-第六层是 signal processing 和 Web app。
+第六层是 signal processing、Web app 和 Agent Workbench。
 
-`src/build_signals.rb` 生成 signal JSON 和 Markdown。`src/web_app.rb` 负责提供本地 Web app，`src/web/pipeline_runner.rb` 负责把页面 refresh 转换成一次固定顺序的 pipeline 执行。
+`src/build_signals.rb` 生成 signal JSON 和 Markdown。`src/agentic-core/web_workbench/app.py` 负责提供本地 FastAPI Web app 和 `/agent` 工作台，`src/agentic-core/web_workbench/pipeline_runner.py` 负责把页面 refresh 转换成一次固定顺序的 Ruby pipeline 执行。
 
 ## 数据流
 
@@ -197,7 +198,7 @@ data/signals/latest.json
 data/dashboard/latest.md
         |
         v
-src/web_app.rb
+src/agentic-core/web_workbench/app.py
 ```
 
 然后生成：
@@ -210,6 +211,8 @@ data/dashboard/source-dashboard.html
 - 当前抓取路径只有 RSS。
 - `schedule.refresh_interval_minutes` 仍只是配置字段，没有调度器消费。
 - `config/user-profile.yml` 和 `config/sources.yml` 可从 Web app 编辑；其他 `config/` 文件仍需手动编辑。
+- 当前 HTTP 后端是 Python/FastAPI；迁移前 Ruby Web app 后端已移除。
+- Ruby scripts 仍是 refresh pipeline 的业务执行器。
 - Web app 的 source 启用/停用会写回 `config/sources.yml`。
 - Web app refresh 当前是同步 HTTP 请求，长任务期间页面会等待请求返回。
 - `data/dashboard/index.html` 是历史静态模板/对照文件，不是当前 Web app 首页。

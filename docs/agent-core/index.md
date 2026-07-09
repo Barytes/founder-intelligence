@@ -12,7 +12,7 @@ src/agentic-core/
   web_workbench/      本机 FastAPI 工作台
 ```
 
-`agentic_core` 是可嵌入组件，负责配置加载、LLM provider 适配、工具注册、对话循环和工具调用。`web_workbench` 是本机开发入口，负责聊天、provider 配置、API key 写入和调试展示。
+`agentic_core` 是可嵌入组件，负责配置加载、LLM provider 适配、工具注册、对话循环和工具调用。`web_workbench` 是本机开发入口，负责聊天、独立设置页、provider 配置、API key 写入和调试展示。
 
 当前 Agentic Core 只绑定当前项目的本地文件和本地工具，不负责 RSS 抓取。RSS 抓取仍由 `src/*.rb` 的确定性 pipeline 完成。
 
@@ -112,19 +112,27 @@ LLM complete(messages, tools)
 
 ## Web 工作台
 
-`web_workbench/app.py` 是 FastAPI 应用，默认本机运行：
+`web_workbench/app.py` 是当前统一 FastAPI HTTP 后端。它同时服务信号控制台和 Agentic Core 工作台，默认本机运行：
 
 ```bash
-PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 8787
+PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 4567
 ```
 
-主要 API：
+工作台页面：
 
-- `GET /api/default-config`：返回安全配置摘要，不返回 API key。
-- `POST /api/provider-settings`：保存 provider 配置，secret 写 `.env`，非 secret 写 local YAML。
-- `POST /api/chat`：调用 `AgenticCore` 运行一次聊天。
+- `GET /`：信号控制台。
+- `GET /agent`：Agentic Core 工作台。
+- `GET /settings`：本机配置页，管理 Agent provider 配置和 RSSHub/GitHub 相关 `.env` secret。
 
-静态 UI 位于 `src/agentic-core/web_workbench/static/`。
+Agent 主要 API：
+
+- `GET /api/agent/default-config`：返回安全配置摘要，不返回 API key。
+- `POST /api/agent/provider-settings`：保存 provider 配置，secret 写 `.env`，非 secret 写 local YAML。
+- `POST /api/agent/chat`：调用 `AgenticCore` 运行一次聊天。
+- `GET /api/settings/env`：返回 `.env` 中 GitHub token 的脱敏状态。
+- `PUT /api/settings/env`：保存 `GITHUB_ACCESS_TOKEN` 到 `.env`，不在响应中回传明文。
+
+旧的 `/api/default-config`、`/api/provider-settings` 和 `/api/chat` 仍作为迁移期兼容 alias 保留。Agent 静态 UI 位于 `src/agentic-core/web_workbench/static/`。
 
 ## 已知风险与漏洞
 

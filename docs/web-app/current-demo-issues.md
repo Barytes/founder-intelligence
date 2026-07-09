@@ -8,13 +8,14 @@
 
 - 排查日期：2026-07-08。
 - 复查日期：2026-07-09。
-- 范围：`src/web/` Web app、RSS-only pipeline runner、当前运行产物和相关配置。
+- 范围：FastAPI 统一 Web app、RSS-only pipeline runner、当前运行产物和相关配置。
 - 重点：页面上的操作是否真的进入后端 pipeline、评分和来源配置。
 
 ## 当前结论
 
 当前 Web app 已经不再是静态 HTML demo。它现在具备以下真实功能：
 
+- FastAPI 在同一个 HTTP 服务下提供 `/` 信号控制台和 `/agent` Agent Workbench。
 - 首页从 `/api/signals/latest` 读取最近一次成功 signals，不再依赖 `assets/sample-data.js`。
 - 点击“刷新”会触发 RSS-only pipeline，并发布新的 `data/signals/latest.json`。
 - 页面会展示本次 refresh 的处理数、新增数、重复数，以及推荐队列是否变化。
@@ -29,23 +30,23 @@
 | 旧 profile 草稿入口不影响评分 | 已修复。页面入口已改为 `user-profile.yml`，写入 `config/user-profile.yml` | `GET/PUT /api/profile` |
 | 来源启停只改浏览器状态 | 已修复。来源列表来自 `config/sources.yml`，启停写回真实配置 | `GET /api/sources`、`POST /api/sources/:id` |
 | 无法编辑真实 source 配置 | 已修复。source overlay 内可编辑并保存整份 `config/sources.yml` | `PUT /api/sources` |
-| 前端 hardcoded source catalog 与后端 config 漂移 | 已修复。前端不再维护第二份来源真相，UI rows 由后端从 `config/sources.yml` 派生 | `src/web/data_repository.rb` |
+| 前端 hardcoded source catalog 与后端 config 漂移 | 已修复。前端不再维护第二份来源真相，UI rows 由后端从 `config/sources.yml` 派生 | `src/agentic-core/web_workbench/dashboard_repository.py` |
 | 刷新完成但页面无变化难以解释 | 已缓解。状态栏展示处理、新增、重复数量，并展示 top signal id 是否变化 | `store_summary`、`signal_diff` |
-| Refresh API 同步语义误导 | 已缓解。成功响应返回 `200`，前端文案改为“正在刷新/刷新完成” | `src/web/app.rb`、`src/web/public/app.js` |
-| refresh status 缺少 run-level 时间 | 已修复。最终状态包含 `started_at`、`duration_seconds` | `src/web/pipeline_runner.rb` |
+| Refresh API 同步语义误导 | 已缓解。成功响应返回 `200`，前端文案改为“正在刷新/刷新完成” | `src/agentic-core/web_workbench/app.py`、`src/web/public/app.js` |
+| refresh status 缺少 run-level 时间 | 已修复。最终状态包含 `started_at`、`duration_seconds` | `src/agentic-core/web_workbench/pipeline_runner.py` |
 | `data/app/tmp/` 持续堆积 | 已缓解。成功 refresh 后保留最近 5 次临时目录 | `cleanup_temp_dirs` |
 | 旧 `config/rss-sources.yml` 误导维护者 | 已修复。该文件已删除，主流程只使用 `config/sources.yml` | `config/sources.yml` |
 | 前端缺少 API 错误兜底 | 已修复基础兜底。网络错误、非 JSON、非 2xx 会展示页面错误 | `fetchJson`、`renderError` |
-| same-origin 判断过于宽松 | 已部分修复。现在按启动时的本地 host/port 生成 allowed origins，并拒绝 host 前缀伪装或错误端口；但缺失 `Origin` 的 mutating request 仍会放行，见 V1 | `same_origin?`、`src/web_app.rb` |
+| same-origin 判断过于宽松 | 已部分修复。现在按本地 host/port allowed origins 拒绝 host 前缀伪装或错误端口；但缺失 `Origin` 的 mutating request 仍会放行，见 V1 | `src/agentic-core/web_workbench/app.py` |
 | signal score 单位不清 | 已缓解。列表和详情标注总分为 `/100`，详情说明后端 1-5 到 0-100 的换算 | `src/web/public/app.js` |
 | profile/source 保存前校验过浅 | 已修复基础语义校验。profile 要有用户和画像词；RSS source 要有可抓取 URL，未实现 source type 不能启用 | `validate_profile_config`、`validate_sources_config` |
-| 真实浏览器中 source toggle 失败 | 已修复。WEBrick 不支持浏览器发起的 `PATCH`，前端运行路径改为 `POST /api/sources/:id`，App 内保留 PATCH 兼容 | `src/web/public/app.js`、`src/web/app.rb` |
+| 真实浏览器中 source toggle 失败 | 已修复。前端运行路径使用 `POST /api/sources/:id`，FastAPI 后端同时保留 `PATCH` 兼容 | `src/web/public/app.js`、`src/agentic-core/web_workbench/app.py` |
 
 ## 2026-07-09 复查新增漏洞
 
 | ID | 漏洞 | 影响 | 修复建议 | 建议优先级 |
 | --- | --- | --- | --- | --- |
-| V1 | 写配置和 refresh 接口在缺少 `Origin` header 时会放行 | 默认绑定 `127.0.0.1` 时风险较低；如果用 `--host 0.0.0.0` 或其他非 loopback 地址启动，能访问端口的客户端可绕过浏览器 same-origin 保护，直接写 `config/user-profile.yml`、`config/sources.yml` 或触发 refresh | 强制 Web app 只允许 loopback 绑定；或为所有写接口和 refresh 加本地 token；mutating endpoints 不应默认接受缺失 `Origin` | P1，建议当前修 |
+| V1 | 写配置和 refresh 接口在缺少 `Origin` header 时会放行 | 默认绑定 `127.0.0.1` 时风险较低；如果用 Uvicorn 绑定 `0.0.0.0` 或其他非 loopback 地址启动，能访问端口的客户端可绕过浏览器 same-origin 保护，直接写 `config/user-profile.yml`、`config/sources.yml` 或触发 refresh | 强制 Web app 只允许 loopback 绑定；或为所有写接口和 refresh 加本地 token；mutating endpoints 不应默认接受缺失 `Origin` | P1，建议当前修 |
 | V2 | `POST /api/sources/:id` 只检查 `source_type: rss`，没有在启停后重新执行完整 `sources.yml` 语义校验 | 一个字段不完整的 disabled RSS source 可以被启用为 runnable，之后 refresh 会把它交给 RSS fetcher，导致抓取失败或错误状态难以解释 | 单个 source 启停后对修改后的整份 config 运行 `validate_sources_config`，失败则不写文件；增加回归测试 | P1/P2，建议当前修 |
 | V3 | `POST /api/sources/:id` 使用 `YAML.dump` 重写整份配置 | 启用/停用 source 会丢失 `sources.yml` 中的人类注释、空行和原始格式 | 做格式保真的单字段更新，或改成结构化 source 表单后统一序列化 | P2，可当前修或作为紧随其后的维护项 |
 | V4 | refresh 仍是同步 HTTP 请求 | RSSHub 或后续 pipeline 慢时，页面只能等待整个 POST 完成，不能展示 step-level 进度、取消或后台恢复 | POST 创建 refresh job，前端轮询 `/api/refresh/status`；runner 进入后台执行 | P2，若本分支目标是完整 Web app 闭环，建议当前修 |
@@ -102,4 +103,4 @@ R7/R8/R9 不建议在本分支展开。它们会明显扩展产品面或 adapter
 - 打开 source folder overlay，启用 `github-activity-diygod`，确认页面状态和临时 `sources.yml` 写入。
 - 打开 `sources.yml` 编辑器并保存，确认状态显示保存成功。
 
-真实浏览器测试曾发现 `PATCH /api/sources/:id` 在 WEBrick HTTP 层返回非 JSON 错误；当前已改为浏览器运行路径使用 `POST /api/sources/:id`。
+历史真实浏览器测试曾发现 `PATCH /api/sources/:id` 在旧 WEBrick HTTP 层返回非 JSON 错误；当前 FastAPI 后端支持 `POST` 和 `PATCH`，浏览器运行路径仍使用 `POST /api/sources/:id`。

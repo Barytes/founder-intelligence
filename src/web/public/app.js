@@ -126,9 +126,30 @@ function statusText(status) {
   if (!status || status.status === "idle") return "读取最近一次成功信号。";
   if (status.status === "running") return `正在刷新：${status.current_step || "refresh"}`;
   if (status.status === "failed" || status.status === "failed_stale_lock") return `刷新失败：${status.last_error || status.status}`;
-  if (status.status === "succeeded_empty") return "刷新完成，但暂无可展示信号。";
-  if (status.status === "succeeded") return `刷新完成。${storeSummaryText(status)}`;
+  if (status.status === "succeeded_empty") return `刷新完成，但暂无可展示信号。${refreshSummaryText(status)}`;
+  if (status.status === "succeeded") return `刷新完成。${refreshSummaryText(status)}`;
   return status.status;
+}
+
+function refreshSummaryText(status) {
+  return [adapterSummaryText(status), storeSummaryText(status)].filter(Boolean).join(" ");
+}
+
+function adapterSummaryText(status) {
+  const summary = status?.adapter_summary;
+  if (!summary) return "";
+  const total = summary.total_sources ?? "-";
+  const ok = summary.ok_sources ?? "-";
+  const failed = summary.failed_sources ?? "-";
+  const items = summary.items ?? "-";
+  const failedSources = (summary.source_results || []).filter((source) => source.status !== "ok");
+  const failedText = failedSources.length
+    ? `失败源：${failedSources.map((source) => {
+      const message = source.errors?.[0]?.message;
+      return message ? `${source.source_id}（${message}）` : source.source_id;
+    }).join("；")}。`
+    : "";
+  return `抓取 ${total} 个源，成功 ${ok} 个，失败 ${failed} 个，入站 ${items} 条。${failedText}`;
 }
 
 function storeSummaryText(status) {

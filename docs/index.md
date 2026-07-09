@@ -5,7 +5,7 @@ Start here when working on this repository.
 ## Primary Documents
 
 - [Current Runtime Architecture](current-demo-architecture.md): explains the current RSS-only pipeline, Web app wrapper, runtime boundaries, and workflow.
-- [Current Web App Architecture](web-app/architecture.md): explains the implemented local Web app architecture, routes, frontend data flow, refresh runner, and runtime boundaries.
+- [Current Web App Architecture](web-app/architecture.md): explains the implemented FastAPI local Web app architecture, routes, frontend data flow, refresh runner, and runtime boundaries.
 - [YAML Deterministic Pipeline](yaml-deterministic-pipeline.md): explains how YAML configuration drives the deterministic pipeline, what each YAML file does, and how each one participates in code flow.
 - [Agent Core](agent-core/index.md): explains the implemented Agentic Core architecture, runtime flow, configuration model, workbench, and known risks.
 
@@ -25,6 +25,7 @@ Start here when working on this repository.
 ## Important Runtime Boundaries
 
 - Current implemented fetch path is RSS-only.
+- The current HTTP backend is Python/FastAPI; refresh still delegates to Ruby pipeline scripts.
 - MCP/API/HTML source templates and contracts exist, but no runnable fetcher is implemented for them yet.
 - Schedule fields exist in configuration, but no scheduler consumes them yet.
 - `config/sources.yml` is the only source registry used by the main demo flow.
