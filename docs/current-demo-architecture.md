@@ -80,7 +80,7 @@ data/dashboard/generated-latest.html
 启动命令：
 
 ```bash
-FI_AUTO_START_RSSHUB=1 PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 4567
+PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 4567
 ```
 
 访问地址：
@@ -89,7 +89,7 @@ FI_AUTO_START_RSSHUB=1 PYTHONPATH=src/agentic-core uv run python -m uvicorn web_
 http://127.0.0.1:4567/
 ```
 
-Web app 默认绑定 `127.0.0.1`。页面读取 `data/signals/latest.json` 展示最新成功 signals；点击刷新时由 `src/agentic-core/web_workbench/pipeline_runner.py` 顺序调用 Ruby CLI pipeline。设置 `FI_AUTO_START_RSSHUB=1` 时，FastAPI startup 会先尝试运行 `docker compose -f config/docker-compose.yml up -d rsshub`。
+Web app 默认绑定 `127.0.0.1`。页面读取 `data/signals/latest.json` 展示最新成功 signals；点击刷新时由 `src/agentic-core/web_workbench/pipeline_runner.py` 顺序调用 Ruby CLI pipeline。FastAPI startup 默认会先尝试运行 `docker compose -f config/docker-compose.yml up -d rsshub`；设置 `FI_AUTO_START_RSSHUB=0` 可跳过 Docker 启动。
 
 ## 架构分层
 

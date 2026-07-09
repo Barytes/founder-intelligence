@@ -30,7 +30,7 @@ The current Web app shell lives under `src/web/public/`.
 ## Run Web App
 
 ```bash
-FI_AUTO_START_RSSHUB=1 PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 4567
+PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 4567
 ```
 
 Then open:
@@ -43,7 +43,7 @@ The Web app is local-only by default and reads the latest successful signals fro
 It can trigger a manual RSS-only refresh and edit `config/user-profile.yml` plus `config/sources.yml` from the browser.
 It also serves `/agent` for the local Agentic Core workbench and `/settings` for local provider/GitHub token settings.
 The HTTP backend is now the Python/FastAPI app; refresh still executes the existing Ruby pipeline scripts.
-`FI_AUTO_START_RSSHUB=1` asks the app to run `docker compose -f config/docker-compose.yml up -d rsshub` during startup. If Docker is unavailable, the app still starts and refresh will report the pipeline failure normally.
+Startup runs `docker compose -f config/docker-compose.yml up -d rsshub` by default. Set `FI_AUTO_START_RSSHUB=0` to skip Docker startup. If Docker is unavailable, the app still starts and refresh will report the pipeline failure normally.
 
 ## MVP Scope
 
