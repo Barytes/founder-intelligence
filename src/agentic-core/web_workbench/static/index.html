@@ -4,12 +4,20 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Agentic Core Workbench</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/agent/static/styles.css" />
   </head>
   <body>
     <main class="layout">
       <section class="panel chat-panel">
         <header class="chat-header">
+          <div class="top-row">
+            <small>Founder Intelligence / Agent</small>
+            <nav class="app-nav" aria-label="App navigation">
+              <a class="app-nav-link" href="/">信号控制台</a>
+              <a class="app-nav-link is-active" href="/agent">Agent Workbench</a>
+              <a class="app-nav-link" href="/settings">配置</a>
+            </nav>
+          </div>
           <h1>Agentic Core</h1>
           <p id="token-status" class="token-status">Checking provider configuration…</p>
         </header>
@@ -31,42 +39,11 @@
 
       <aside class="panel side-panel">
         <section class="panel-section">
-          <h2>Provider</h2>
-          <form id="provider-form" class="provider-form">
-            <label class="field">
-              Saved Configuration
-              <select id="config-select"></select>
-            </label>
-            <label class="field">
-              Provider Type
-              <select id="provider-select"></select>
-            </label>
-            <label class="field">
-              Config Name
-              <input id="config-name-input" placeholder="Work DeepSeek" />
-            </label>
-            <label class="field">
-              Model
-              <input id="model-input" value="—" />
-            </label>
-            <label class="field">
-              API Key
-              <input
-                id="api-key-input"
-                type="password"
-                autocomplete="new-password"
-                placeholder="sk-..."
-              />
-            </label>
-            <label class="field">
-              Base URL
-              <input id="base-url-edit-input" placeholder="https://api.openai.com/v1" />
-            </label>
-            <div class="provider-actions">
-              <button type="submit" id="provider-save">Save</button>
-              <p id="provider-save-status" class="provider-save-status" role="status" aria-live="polite"></p>
-            </div>
-          </form>
+          <h2>Configuration</h2>
+          <div class="config-summary">
+            <p id="provider-summary">Loading provider configuration…</p>
+            <a class="settings-link" href="/settings">Open settings</a>
+          </div>
         </section>
 
         <section class="panel-section">
@@ -80,6 +57,6 @@
         </section>
       </aside>
     </main>
-    <script src="/static/app.js"></script>
+    <script src="/agent/static/app.js"></script>
   </body>
 </html>

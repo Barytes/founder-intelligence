@@ -4,7 +4,7 @@
 
 ## 总览
 
-当前 Web app 是一个本地常驻控制台。它读取最近一次成功生成的 signals，允许用户从页面触发一次 RSS-only pipeline refresh，并提供两个真实配置编辑入口：
+当前 Web app 是一个本地常驻控制台，HTTP 后端已经统一到 Python/FastAPI。它读取最近一次成功生成的 signals，允许用户从页面触发一次 RSS-only pipeline refresh，并提供两个真实配置编辑入口：
 
 - `config/user-profile.yml`：个性化评分 profile，保存后下一次 refresh 参与后端评分。
 - `config/sources.yml`：真实 source registry，保存或启停 RSS source 后下一次 refresh 生效。
@@ -13,25 +13,28 @@
 Browser
   |
   v
-ruby src/web_app.rb
+uvicorn web_workbench.app:app
   |
   v
-FounderIntelligence::Web::App
+FastAPI unified backend
   |
   +-- static shell: src/web/public/index.html
   +-- frontend js:  src/web/public/app.js
-  +-- data/config:  FounderIntelligence::Web::DataRepository
-  +-- refresh:      FounderIntelligence::Web::PipelineRunner
+  +-- agent shell:  src/agentic-core/web_workbench/static/index.html
+  +-- settings UI:  src/agentic-core/web_workbench/static/settings.html
+  +-- data/config:  web_workbench.dashboard_repository.DashboardRepository
+  +-- refresh:      web_workbench.pipeline_runner.PipelineRunner
+  +-- agent core:   agentic_core.AgenticCore
 ```
 
-Web app 没有重新实现抓取、ingestion、存储或评分逻辑。页面触发 refresh 时，后端仍然串行调用现有 Ruby pipeline 脚本。
+Web app 没有重新实现抓取、ingestion、存储或评分逻辑。页面触发 refresh 时，Python 后端仍然串行调用现有 Ruby pipeline 脚本。
 
 ## 启动入口
 
 启动命令：
 
 ```bash
-ruby src/web_app.rb --port 4567
+FI_AUTO_START_RSSHUB=1 PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 4567
 ```
 
 默认访问地址：
@@ -40,19 +43,11 @@ ruby src/web_app.rb --port 4567
 http://127.0.0.1:4567/
 ```
 
-`src/web_app.rb` 使用 WEBrick 启动本地 HTTP server。默认绑定 `127.0.0.1`，默认端口是 `4567`，并把所有请求交给 `FounderIntelligence::Web::App#handle`。启动入口会根据 `--host` 和 `--port` 生成写操作允许的本地 origins。
-
-`src/web_app.rb` 只负责 server lifecycle：
-
-- 解析 `--host`、`--port`、`--root`。
-- 创建 `FounderIntelligence::Web::App`。
-- 把 WEBrick request 转成 app 内部 request。
-- 把 app response 写回 WEBrick response。
-- 处理 `INT` 和 `TERM` 退出信号。
+`web_workbench.app` 使用 FastAPI 提供唯一 HTTP 服务。默认本机绑定由 Uvicorn 命令控制；same-origin guard 会接受请求实际 host/port 对应的 Origin，并保留 `FI_ALLOWED_ORIGINS` 覆盖项。`FI_AUTO_START_RSSHUB=1` 会在 app startup 时尝试启动 `config/docker-compose.yml` 中的 `rsshub` 服务；Docker 不可用时不会阻止 Web app 启动。
 
 ## 后端路由层
 
-路由集中在 `src/web/app.rb`。
+路由集中在 `src/agentic-core/web_workbench/app.py`。
 
 当前路由：
 
@@ -61,6 +56,9 @@ GET   /                    -> src/web/public/index.html
 GET   /app.js              -> src/web/public/app.js
 GET   /styles.css          -> src/web/public/styles.css
 GET   /assets/...          -> src/web/public/assets/...
+GET   /agent               -> src/agentic-core/web_workbench/static/index.html
+GET   /settings            -> src/agentic-core/web_workbench/static/settings.html
+GET   /agent/static/...    -> src/agentic-core/web_workbench/static/...
 
 GET   /api/signals/latest  -> data/signals/latest.json
 GET   /api/runs/latest     -> data/store/runs/*.jsonl 的最新记录
@@ -72,13 +70,19 @@ PUT   /api/sources         -> 校验并写入 config/sources.yml
 POST  /api/sources/:id     -> 启用/停用单个 RSS source
 GET   /api/health          -> {"status":"ok"}
 POST  /api/refresh         -> 触发一次 pipeline refresh
+
+GET   /api/agent/default-config     -> Agent provider/config 摘要
+POST  /api/agent/provider-settings  -> 保存 Agent provider 配置
+POST  /api/agent/chat               -> 调用 Agentic Core
+GET   /api/settings/env             -> .env secret 脱敏状态
+PUT   /api/settings/env             -> 保存 GITHUB_ACCESS_TOKEN 到 .env
 ```
 
-`App` 的职责是很薄的一层 HTTP 编排：
+FastAPI app 的职责是很薄的一层 HTTP 编排：
 
 - 返回静态前端 shell 和资源。
-- 调用 `DataRepository` 读取本地数据和配置文件。
-- 调用 `PipelineRunner` 触发 refresh。
+- 调用 `DashboardRepository` 读取本地数据和配置文件。
+- 调用 Python `PipelineRunner` 触发 refresh；runner 内部调用 Ruby scripts。
 - 对写操作和 `/api/refresh` 做 same-origin 检查，并按启动 host/port 精确匹配 allowed origins。
 - 拒绝 `command`、`script`、`path`、`argv`、`args` 这类 refresh 参数，避免把页面 API 变成任意命令执行入口。
 
@@ -92,6 +96,17 @@ src/web/public/
   app.js
   styles.css
   assets/brand-logos/
+```
+
+Agent 和配置页资源位于：
+
+```text
+src/agentic-core/web_workbench/static/
+  index.html
+  app.js
+  settings.html
+  settings.js
+  styles.css
 ```
 
 `index.html` 是固定应用 shell。它不再加载 `assets/sample-data.js`，也不是把旧 `data/dashboard/index.html` iframe 进来。页面主体包括：
@@ -119,9 +134,11 @@ GET /api/profile
 
 前端不再维护第二份 source catalog，也不再把 profile/source 状态保存在浏览器 localStorage。来源列表、启用状态、可运行状态、YAML 原文都来自 `/api/sources`。
 
+`/agent` 只保留聊天、工具状态和工具调用日志。Agent provider、model、base URL、API key 迁移到 `/settings`。`/settings` 还可以写入 `GITHUB_ACCESS_TOKEN` 到项目根目录 `.env`，用于 RSSHub GitHub route 等本机依赖；页面和 API 只显示脱敏状态，不回传 secret 明文。
+
 ## 配置读写层
 
-`src/web/data_repository.rb` 封装 Web app 对本地数据和配置文件的读写。
+`src/agentic-core/web_workbench/dashboard_repository.py` 封装 Web app 对本地数据和配置文件的读写。
 
 当前读取规则：
 
@@ -154,12 +171,12 @@ sources
 
 - `PUT /api/profile` 要求 body 中的 `content` 是合法 YAML mapping，包含 `version`、`user.name`，并且至少有一个可用于匹配的 interest、watch entity 或 goal keyword。
 - `PUT /api/sources` 要求 body 中的 `content` 是合法 YAML mapping，包含 `version` 和 `sources` 数组；每个真实 RSS source 必须有唯一 `id`、`name`、`provider`、`category`、布尔 `enabled` 和 HTTP(S) `connection.rss_url`。
-- `POST /api/sources/:id` 只允许切换 `source_type: rss` 的真实 source，不允许启用 source template 或未实现 source type。`App#handle` 内部保留 `PATCH` 兼容，但真实 WEBrick 浏览器路径使用 `POST`。
+- `POST /api/sources/:id` 只允许切换 `source_type: rss` 的真实 source，不允许启用 source template 或未实现 source type。FastAPI 后端保留 `PATCH` 兼容，但浏览器运行路径使用 `POST`。
 - 写文件使用临时文件再 `mv` 覆盖目标文件。
 
 ## Refresh Runner
 
-`src/web/pipeline_runner.rb` 负责把页面上的“刷新”转换成一次串行 pipeline 执行。
+`src/agentic-core/web_workbench/pipeline_runner.py` 负责把页面上的“刷新”转换成一次串行 pipeline 执行。
 
 当前步骤顺序：
 
@@ -199,7 +216,7 @@ runner 的运行机制：
 2. 通过 `data/app/refresh.lock` 防止并发 refresh。
 3. 生成 `refresh-<timestamp>-<random>` 格式的 `request_id`。
 4. 写入 `data/app/refresh-status.json`，状态为 `running`。
-5. 使用 `Open3.capture3` 在 repo root 下按固定顺序运行每一步。
+5. 使用 `subprocess.run` 在 repo root 下按固定顺序运行每一步。
 6. 每一步记录 exit status、开始和结束时间、stdout/stderr 尾部日志。
 7. 每一步后验证关键产物是否存在且 JSON 可解析。
 8. 从 store step stdout 提取本次输入、新增、重复数量。
@@ -261,8 +278,9 @@ failed_stale_lock
 当前 Web app 相关测试在：
 
 ```text
-tests/test_web_app.rb
-tests/test_web_core.rb
+tests/test_unified_web_app.py
+tests/test_python_pipeline_runner.py
+tests/test_workbench_api.py
 ```
 
 测试覆盖的重点包括：
@@ -284,17 +302,17 @@ tests/test_web_core.rb
 ## 文件分工
 
 ```text
-src/web_app.rb
-  本地 WEBrick 启动入口。
+src/agentic-core/web_workbench/app.py
+  当前统一 FastAPI HTTP 入口，服务 dashboard、agent workbench、dashboard API 和 agent API。
 
-src/web/app.rb
-  HTTP route、静态资源、API response、配置写入 guard 和 refresh request guard。
-
-src/web/data_repository.rb
+src/agentic-core/web_workbench/dashboard_repository.py
   读取 latest signals、latest run、refresh status、profile 和 sources，并写入允许编辑的配置文件。
 
-src/web/pipeline_runner.rb
-  串行调用现有 RSS-only pipeline，管理 lock、status、临时产物、diff 和发布。
+src/agentic-core/web_workbench/pipeline_runner.py
+  串行调用现有 Ruby RSS-only pipeline scripts，管理 lock、status、临时产物、diff 和发布。
+
+src/web/public/
+  Dashboard 前端静态资源。迁移前 Ruby Web app 后端文件已移除，只保留前端 shell。
 
 src/web/public/index.html
   固定 Web app shell。

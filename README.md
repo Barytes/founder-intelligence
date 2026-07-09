@@ -30,7 +30,7 @@ The current Web app shell lives under `src/web/public/`.
 ## Run Web App
 
 ```bash
-ruby src/web_app.rb --port 4567
+FI_AUTO_START_RSSHUB=1 PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 4567
 ```
 
 Then open:
@@ -41,6 +41,8 @@ http://127.0.0.1:4567/
 
 The Web app is local-only by default and reads the latest successful signals from `data/signals/latest.json`.
 It can trigger a manual RSS-only refresh and edit `config/user-profile.yml` plus `config/sources.yml` from the browser.
+The HTTP backend is now the Python/FastAPI app; refresh still executes the existing Ruby pipeline scripts.
+`FI_AUTO_START_RSSHUB=1` asks the app to run `docker compose -f config/docker-compose.yml up -d rsshub` during startup. If Docker is unavailable, the app still starts and refresh will report the pipeline failure normally.
 
 ## MVP Scope
 
@@ -58,7 +60,7 @@ system, long-term memory, or automatic action execution.
 
 ## Agentic Core Workbench
 
-The Agentic Core is a local-only Python component and FastAPI workbench.
+The Agentic Core is a local-only Python component served by the same FastAPI backend.
 
 Create a local config from the example:
 
@@ -67,16 +69,10 @@ cp config/agentic-core.example.yml config/agentic-core.yml
 cp .env.example .env
 ```
 
-Set `OPENAI_API_KEY` in `.env`, then run:
-
-```bash
-PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 8787
-```
-
-Open:
+Set `OPENAI_API_KEY` in `.env`, run the Web app command above, then open:
 
 ```text
-http://127.0.0.1:8787
+http://127.0.0.1:4567/agent
 ```
 
 The workbench reads existing pipeline artifacts such as `data/signals/latest.json` and writes agentic outputs under `data/agentic/`.

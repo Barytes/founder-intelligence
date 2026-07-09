@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent Settings</title>
+    <link rel="stylesheet" href="/agent/static/styles.css" />
+  </head>
+  <body>
+    <main class="settings-layout">
+      <header class="panel settings-header">
+        <div class="top-row">
+          <small>Founder Intelligence / Settings</small>
+          <nav class="app-nav" aria-label="App navigation">
+            <a class="app-nav-link" href="/">信号控制台</a>
+            <a class="app-nav-link" href="/agent">Agent Workbench</a>
+            <a class="app-nav-link is-active" href="/settings">配置</a>
+          </nav>
+        </div>
+        <h1>Agent Settings</h1>
+        <p id="settings-status" class="token-status">Loading local configuration...</p>
+      </header>
+
+      <section class="settings-grid">
+        <section class="panel panel-section">
+          <h2>Provider</h2>
+          <form id="provider-form" class="provider-form">
+            <label class="field">
+              Saved Configuration
+              <select id="config-select"></select>
+            </label>
+            <label class="field">
+              Provider Type
+              <select id="provider-select"></select>
+            </label>
+            <label class="field">
+              Config Name
+              <input id="config-name-input" placeholder="Work DeepSeek" />
+            </label>
+            <label class="field">
+              Model
+              <input id="model-input" value="" />
+            </label>
+            <label class="field">
+              API Key
+              <input
+                id="api-key-input"
+                type="password"
+                autocomplete="new-password"
+                placeholder="sk-..."
+              />
+            </label>
+            <label class="field">
+              Base URL
+              <input id="base-url-edit-input" placeholder="https://api.openai.com/v1" />
+            </label>
+            <div class="provider-actions">
+              <button type="submit" id="provider-save">Save Provider</button>
+              <p id="provider-save-status" class="provider-save-status" role="status" aria-live="polite"></p>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel panel-section">
+          <h2>GitHub Token</h2>
+          <div class="config-summary">
+            <p id="github-token-status">Checking GITHUB_ACCESS_TOKEN...</p>
+          </div>
+          <form id="github-token-form" class="provider-form">
+            <label class="field">
+              GITHUB_ACCESS_TOKEN
+              <input
+                id="github-token-input"
+                type="password"
+                autocomplete="new-password"
+                placeholder="ghp_..."
+              />
+            </label>
+            <div class="provider-actions">
+              <button type="submit" id="github-token-save">Save Token</button>
+              <p id="github-token-save-status" class="provider-save-status" role="status" aria-live="polite"></p>
+            </div>
+          </form>
+        </section>
+      </section>
+
+      <p id="error-banner" class="error-banner" role="status" aria-live="polite" hidden></p>
+    </main>
+    <script src="/agent/static/settings.js"></script>
+  </body>
+</html>

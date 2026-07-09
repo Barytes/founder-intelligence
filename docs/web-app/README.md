@@ -16,9 +16,10 @@ Historical planning documents were moved to:
 
 Current runtime facts:
 
-- The Web app entrypoint is `src/web_app.rb`.
+- The Web app entrypoint is `web_workbench.app` via FastAPI/Uvicorn.
 - The browser shell is served from `src/web/public/`.
 - Runtime signal data comes from `data/signals/latest.json`.
 - The Web app can edit `config/user-profile.yml` and `config/sources.yml`.
 - The implemented fetch path remains RSS-only.
+- Refresh still executes the existing Ruby pipeline scripts as command-line steps.
 - MCP/API/HTML/file source templates are not runnable fetchers in the current MVP.

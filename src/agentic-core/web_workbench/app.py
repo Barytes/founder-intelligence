@@ -1,11 +1,15 @@
 from pathlib import Path
+from contextlib import asynccontextmanager
+import json
 import os
 import re
+import subprocess
 from typing import Any
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import yaml
@@ -13,6 +17,8 @@ import yaml
 from agentic_core import AgenticCore
 from agentic_core.config import load_agentic_config
 from agentic_core.schemas import AgenticConfig, ProviderProfileConfig
+from web_workbench.dashboard_repository import DashboardRepository
+from web_workbench.pipeline_runner import PipelineRunner
 
 
 def _find_repo_root(start: Path) -> Path:
@@ -22,18 +28,137 @@ def _find_repo_root(start: Path) -> Path:
     return start.parents[1]
 
 
-REPO_ROOT = _find_repo_root(Path(__file__).resolve())
+CODE_REPO_ROOT = _find_repo_root(Path(__file__).resolve())
+REPO_ROOT = Path(os.environ["FI_REPO_ROOT"]).resolve() if os.environ.get("FI_REPO_ROOT") else CODE_REPO_ROOT
 DEFAULT_CONFIG = REPO_ROOT / "config/agentic-core.example.yml"
 LOCAL_CONFIG = REPO_ROOT / "config/agentic-core.local.yml"
 ENV_PATH = REPO_ROOT / ".env"
 STATIC_DIR = Path(__file__).parent / "static"
+DASHBOARD_PUBLIC_DIR = CODE_REPO_ROOT / "src/web/public"
 PROVIDER_TEMPLATE_IDS = ("openai", "deepseek", "openrouter", "custom")
 NEW_CONFIG_ID = "__new__"
+DISALLOWED_REFRESH_KEYS = {"command", "script", "path", "argv", "args"}
+DEFAULT_ALLOWED_ORIGINS = ("http://127.0.0.1:4567", "http://localhost:4567")
 
-app = FastAPI(title="Founder Intelligence Agentic Core Workbench")
+
+@asynccontextmanager
+async def _lifespan(application: FastAPI):
+    if getattr(application.state, "auto_start_rsshub", False):
+        application.state.rsshub_start_result = ensure_rsshub(application.state.dashboard_root)
+    yield
+
+
+app = FastAPI(title="Founder Intelligence Agentic Core Workbench", lifespan=_lifespan)
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount("/agent/static", StaticFiles(directory=STATIC_DIR), name="agent-static")
+
+
+def create_app(
+    *,
+    repo_root: Path | str | None = None,
+    runner: Any | None = None,
+    allowed_origins: list[str] | tuple[str, ...] | None = None,
+    auto_start_rsshub: bool | None = None,
+) -> FastAPI:
+    root = Path(repo_root or REPO_ROOT).resolve()
+    dashboard_public_dir = root / "src/web/public"
+    origin_values = allowed_origins or _allowed_origins_from_env() or DEFAULT_ALLOWED_ORIGINS
+    app.state.dashboard_root = root
+    app.state.dashboard_public_dir = dashboard_public_dir if dashboard_public_dir.exists() else DASHBOARD_PUBLIC_DIR
+    app.state.dashboard_runner = runner or PipelineRunner(root=root)
+    app.state.auto_start_rsshub = (
+        auto_start_rsshub
+        if auto_start_rsshub is not None
+        else os.environ.get("FI_AUTO_START_RSSHUB") == "1"
+    )
+    app.state.rsshub_start_result = {"status": "disabled"}
+    app.state.allowed_origins = {
+        normalized
+        for normalized in (_normalize_origin(origin) for origin in origin_values)
+        if normalized
+    }
+    return app
+
+
+def _allowed_origins_from_env() -> list[str]:
+    raw = os.environ.get("FI_ALLOWED_ORIGINS", "")
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+def _dashboard_repository() -> DashboardRepository:
+    return DashboardRepository(root=app.state.dashboard_root)
+
+
+def _dashboard_public_path(name: str) -> Path:
+    return Path(app.state.dashboard_public_dir) / name
+
+
+def _normalize_origin(value: str) -> str | None:
+    parsed = urlparse(str(value))
+    if parsed.scheme != "http" or not parsed.hostname:
+        return None
+    port = f":{parsed.port}" if parsed.port and parsed.port != 80 else ""
+    return f"{parsed.scheme}://{parsed.hostname}{port}"
+
+
+def _request_origin(request: Request) -> str | None:
+    url = request.url
+    if not url.scheme or not url.hostname:
+        return None
+    port = f":{url.port}" if url.port and url.port != 80 else ""
+    return f"{url.scheme}://{url.hostname}{port}"
+
+
+def _same_origin(request: Request) -> bool:
+    origin = request.headers.get("origin")
+    if not origin:
+        return True
+    normalized = _normalize_origin(origin)
+    return bool(
+        normalized
+        and (normalized in app.state.allowed_origins or normalized == _request_origin(request))
+    )
+
+
+def ensure_rsshub(root: Path | str, *, run_command: Any | None = None) -> dict[str, Any]:
+    repo_root = Path(root).resolve()
+    compose_file = repo_root / "config/docker-compose.yml"
+    if not compose_file.exists():
+        return {"status": "skipped", "message": "config/docker-compose.yml is missing."}
+
+    env_file = repo_root / ".env"
+    if not env_file.exists():
+        env_file.write_text("", encoding="utf-8")
+
+    command = ["docker", "compose", "-f", str(compose_file), "up", "-d", "rsshub"]
+    runner = run_command or (
+        lambda argv: subprocess.run(
+            argv,
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
+        )
+    )
+    try:
+        runner(command)
+    except Exception as exc:
+        return {"status": "error", "command": command, "message": str(exc)}
+    return {"status": "started", "command": command}
+
+
+async def _json_payload(request: Request) -> dict[str, Any] | None:
+    body = await request.body()
+    if not body or not body.strip():
+        return {}
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 class ChatRequest(BaseModel):
@@ -50,6 +175,10 @@ class ProviderSettingsRequest(BaseModel):
     api_key: str | None = None
     base_url: str | None = None
     model: str | None = None
+
+
+class EnvSettingsRequest(BaseModel):
+    github_token: str | None = None
 
 
 def _error_result(error: str) -> dict[str, Any]:
@@ -96,6 +225,38 @@ def _clean_env_value(label: str, value: str | None) -> str | None:
     if "\n" in cleaned or "\r" in cleaned:
         raise ValueError(f"{label} must not contain newlines")
     return cleaned
+
+
+def _env_file_values(env_path: Path) -> dict[str, str]:
+    if not env_path.exists():
+        return {}
+
+    values: dict[str, str] = {}
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        key = _env_key_from_line(line)
+        if key and "=" in line:
+            values[key] = line.split("=", 1)[1].strip()
+    return values
+
+
+def _mask_secret(value: str | None) -> str | None:
+    if not value:
+        return None
+    if len(value) <= 8:
+        return f"{value[0]}...{value[-1]}"
+    return f"{value[:4]}...{value[-4:]}"
+
+
+def _env_settings_payload() -> dict[str, Any]:
+    env_values = _env_file_values(ENV_PATH)
+    github_token = os.environ.get("GITHUB_ACCESS_TOKEN") or env_values.get("GITHUB_ACCESS_TOKEN")
+    return {
+        "github_token": {
+            "env_key": "GITHUB_ACCESS_TOKEN",
+            "configured": bool(github_token),
+            "preview": _mask_secret(github_token),
+        }
+    }
 
 
 def _custom_provider_identity(name: str) -> tuple[str, str]:
@@ -243,22 +404,37 @@ def _provider_templates_payload(config: AgenticConfig) -> dict[str, Any] | None:
     }
 
 
-def _saved_configs_payload(config: AgenticConfig) -> dict[str, Any] | None:
+def _local_profile_ids(path: Path) -> set[str]:
+    data = _read_local_config(path)
+    items = data.get("provider_profiles", {}).get("items", {})
+    if not isinstance(items, dict):
+        return set()
+    return {profile_id for profile_id in items if isinstance(profile_id, str)}
+
+
+def _saved_configs_payload(
+    config: AgenticConfig,
+    local_config_path: Path | None = None,
+) -> dict[str, Any] | None:
     profiles_payload = _provider_profiles_payload(config)
     if profiles_payload is None:
         return None
+    local_config_path = local_config_path or LOCAL_CONFIG
+    saved_ids = _local_profile_ids(local_config_path)
+    items = {
+        profile_id: profile
+        for profile_id, profile in profiles_payload["items"].items()
+        if profile_id in saved_ids
+    }
+    active = profiles_payload["active"] if profiles_payload["active"] in items else None
     return {
-        "active": profiles_payload["active"],
-        "items": {
-            profile_id: profile
-            for profile_id, profile in profiles_payload["items"].items()
-            if profile_id != "custom"
-        },
+        "active": active,
+        "items": items,
     }
 
 
-@app.get("/", response_model=None)
-def index():
+@app.get("/agent", response_model=None)
+def agent_index():
     index_file = STATIC_DIR / "index.html"
     if index_file.exists():
         return FileResponse(index_file)
@@ -268,11 +444,123 @@ def index():
     }
 
 
+@app.get("/settings", response_model=None)
+def settings_index():
+    settings_file = STATIC_DIR / "settings.html"
+    if settings_file.exists():
+        return FileResponse(settings_file)
+    return {
+        "status": "missing_ui",
+        "message": "Settings UI has not been built yet.",
+    }
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/", response_model=None)
+def dashboard_index():
+    return FileResponse(_dashboard_public_path("index.html"))
+
+
+@app.get("/app.js", response_model=None)
+def dashboard_app_js():
+    return FileResponse(_dashboard_public_path("app.js"), media_type="application/javascript")
+
+
+@app.get("/styles.css", response_model=None)
+def dashboard_styles():
+    return FileResponse(_dashboard_public_path("styles.css"), media_type="text/css")
+
+
+@app.get("/assets/{asset_path:path}", response_model=None)
+def dashboard_asset(asset_path: str):
+    assets_root = _dashboard_public_path("assets").resolve()
+    path = (assets_root / asset_path).resolve()
+    if not str(path).startswith(f"{assets_root}/") or not path.is_file():
+        return JSONResponse({"status": "not_found"}, status_code=404)
+    return FileResponse(path)
+
+
+@app.get("/api/signals/latest")
+def latest_signals() -> dict[str, Any]:
+    return _dashboard_repository().latest_signals()
+
+
+@app.get("/api/runs/latest")
+def latest_run() -> dict[str, Any]:
+    return _dashboard_repository().latest_run()
+
+
+@app.get("/api/refresh/status")
+def refresh_status() -> dict[str, Any]:
+    return _dashboard_repository().refresh_status()
+
+
+@app.get("/api/profile")
+def profile() -> dict[str, Any]:
+    return _dashboard_repository().profile()
+
+
+@app.put("/api/profile")
+async def update_profile(request: Request):
+    if not _same_origin(request):
+        return JSONResponse({"status": "forbidden"}, status_code=403)
+    payload = await _json_payload(request)
+    if payload is None:
+        return JSONResponse({"status": "bad_request", "message": "Invalid JSON body."}, status_code=400)
+    result = _dashboard_repository().update_profile(payload.get("content"))
+    return JSONResponse(result, status_code=200 if result.get("status") == "saved" else 400)
+
+
+@app.get("/api/sources")
+def sources() -> dict[str, Any]:
+    return _dashboard_repository().sources()
+
+
+@app.put("/api/sources")
+async def update_sources(request: Request):
+    if not _same_origin(request):
+        return JSONResponse({"status": "forbidden"}, status_code=403)
+    payload = await _json_payload(request)
+    if payload is None:
+        return JSONResponse({"status": "bad_request", "message": "Invalid JSON body."}, status_code=400)
+    result = _dashboard_repository().update_sources(payload.get("content"))
+    return JSONResponse(result, status_code=200 if result.get("status") == "saved" else 400)
+
+
+@app.post("/api/sources/{source_id}")
+@app.patch("/api/sources/{source_id}")
+async def update_source_enabled(source_id: str, request: Request):
+    if not _same_origin(request):
+        return JSONResponse({"status": "forbidden"}, status_code=403)
+    payload = await _json_payload(request)
+    if payload is None:
+        return JSONResponse({"status": "bad_request", "message": "Invalid JSON body."}, status_code=400)
+    result = _dashboard_repository().update_source_enabled(source_id, payload.get("enabled"))
+    status_code = 200 if result.get("status") == "saved" else 404 if result.get("status") == "not_found" else 400
+    return JSONResponse(result, status_code=status_code)
+
+
+@app.post("/api/refresh")
+async def refresh(request: Request):
+    if not _same_origin(request):
+        return JSONResponse({"status": "forbidden"}, status_code=403)
+    payload = await _json_payload(request)
+    if payload is None:
+        return JSONResponse({"status": "bad_request", "message": "Invalid JSON body."}, status_code=400)
+    if DISALLOWED_REFRESH_KEYS.intersection(str(key) for key in payload.keys()):
+        return JSONResponse(
+            {"status": "bad_request", "message": "Refresh does not accept command parameters."},
+            status_code=400,
+        )
+    result = app.state.dashboard_runner.refresh()
+    return JSONResponse(result, status_code=409 if result.get("status") == "already_running" else 200)
+
+
+@app.get("/api/agent/default-config")
 @app.get("/api/default-config")
 def default_config() -> dict[str, Any]:
     config: AgenticConfig = load_agentic_config(
@@ -290,15 +578,49 @@ def default_config() -> dict[str, Any]:
     }
 
 
-@app.post("/api/provider-settings")
-def save_provider_settings(request: ProviderSettingsRequest) -> dict[str, Any]:
+@app.get("/api/settings/env")
+def env_settings() -> dict[str, Any]:
+    return _env_settings_payload()
+
+
+@app.put("/api/settings/env")
+async def update_env_settings(request: Request):
+    if not _same_origin(request):
+        return JSONResponse({"status": "forbidden"}, status_code=403)
+    payload = await _json_payload(request)
+    if payload is None:
+        return JSONResponse({"status": "bad_request", "message": "Invalid JSON body."}, status_code=400)
+
     try:
-        config_id = _clean_env_value("Config", request.config_id)
-        config_name = _clean_config_name(request.config_name or request.provider_name)
-        provider_id = _clean_env_value("Provider", request.provider_id)
-        api_key = _clean_env_value("API key", request.api_key)
-        base_url = _clean_env_value("Base URL", request.base_url)
-        model = _clean_env_value("Model", request.model)
+        settings = EnvSettingsRequest.model_validate(payload)
+        github_token = _clean_env_value("GitHub token", settings.github_token)
+    except ValueError as exc:
+        return JSONResponse({"status": "error", "errors": [str(exc)]}, status_code=400)
+
+    if github_token is None:
+        return JSONResponse(
+            {"status": "error", "errors": ["GitHub token is required."]},
+            status_code=400,
+        )
+
+    _write_env_updates(ENV_PATH, {"GITHUB_ACCESS_TOKEN": github_token})
+    os.environ["GITHUB_ACCESS_TOKEN"] = github_token
+    load_dotenv(ENV_PATH, override=True)
+    return {"status": "saved", **_env_settings_payload(), "errors": []}
+
+
+@app.post("/api/agent/provider-settings")
+@app.post("/api/provider-settings")
+def save_provider_settings(request: Request, settings: ProviderSettingsRequest):
+    if not _same_origin(request):
+        return JSONResponse({"status": "forbidden"}, status_code=403)
+    try:
+        config_id = _clean_env_value("Config", settings.config_id)
+        config_name = _clean_config_name(settings.config_name or settings.provider_name)
+        provider_id = _clean_env_value("Provider", settings.provider_id)
+        api_key = _clean_env_value("API key", settings.api_key)
+        base_url = _clean_env_value("Base URL", settings.base_url)
+        model = _clean_env_value("Model", settings.model)
     except ValueError as exc:
         return _settings_error(str(exc))
 
@@ -434,6 +756,7 @@ def save_provider_settings(request: ProviderSettingsRequest) -> dict[str, Any]:
     }
 
 
+@app.post("/api/agent/chat")
 @app.post("/api/chat")
 def chat(request: ChatRequest) -> dict[str, Any]:
     resolved_path, error = _resolve_config_path(request.config_path)
@@ -449,3 +772,6 @@ def chat(request: ChatRequest) -> dict[str, Any]:
         return result.model_dump()
     except Exception as exc:
         return _error_result(str(exc))
+
+
+create_app()
