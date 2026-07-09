@@ -41,7 +41,7 @@ Web app 没有重新实现抓取、ingestion、存储或评分逻辑。页面触
 启动命令：
 
 ```bash
-FI_AUTO_START_RSSHUB=1 PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 4567
+PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 4567
 ```
 
 默认访问地址：
@@ -50,7 +50,7 @@ FI_AUTO_START_RSSHUB=1 PYTHONPATH=src/agentic-core uv run python -m uvicorn web_
 http://127.0.0.1:4567/
 ```
 
-`web_workbench.app` 使用 FastAPI 提供唯一 HTTP 服务。默认本机绑定由 Uvicorn 命令控制；same-origin guard 会接受请求实际 host/port 对应的 Origin，并保留 `FI_ALLOWED_ORIGINS` 覆盖项。`FI_AUTO_START_RSSHUB=1` 会在 app startup 时尝试启动 `config/docker-compose.yml` 中的 `rsshub` 服务；Docker 不可用时不会阻止 Web app 启动。
+`web_workbench.app` 使用 FastAPI 提供唯一 HTTP 服务。默认本机绑定由 Uvicorn 命令控制；same-origin guard 会接受请求实际 host/port 对应的 Origin，并保留 `FI_ALLOWED_ORIGINS` 覆盖项。App startup 默认会尝试启动 `config/docker-compose.yml` 中的 `rsshub` 服务；设置 `FI_AUTO_START_RSSHUB=0` 可跳过 Docker 启动。Docker 不可用时不会阻止 Web app 启动。
 
 ## 后端路由层
 

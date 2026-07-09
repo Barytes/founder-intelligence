@@ -50,7 +50,7 @@ ruby -c src/build_signals.rb
 启动本地 server：
 
 ```bash
-FI_AUTO_START_RSSHUB=1 PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 4567
+PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 4567
 ```
 
 检查首页：

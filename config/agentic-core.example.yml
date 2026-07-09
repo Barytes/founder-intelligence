@@ -46,6 +46,12 @@ tools:
     enabled: true
   read_canonical_items:
     enabled: true
+  read_refresh_status:
+    enabled: true
+  read_latest_run:
+    enabled: true
+  run_refresh_pipeline:
+    enabled: true
   write_agentic_artifact:
     enabled: true
 

@@ -128,6 +128,42 @@ def test_ensure_rsshub_invokes_docker_compose_when_enabled(tmp_path):
     assert calls == [["docker", "compose", "-f", str(compose_file), "up", "-d", "rsshub"]]
 
 
+def test_workbench_auto_starts_rsshub_by_default(monkeypatch, tmp_path):
+    starts = []
+
+    def fake_ensure_rsshub(root):
+        starts.append(root)
+        return {"status": "started"}
+
+    monkeypatch.delenv("FI_AUTO_START_RSSHUB", raising=False)
+    monkeypatch.setattr("web_workbench.app.ensure_rsshub", fake_ensure_rsshub)
+    write_repo_fixture(tmp_path)
+
+    with TestClient(create_app(repo_root=tmp_path, runner=FakeRunner())) as client:
+        response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert starts == [tmp_path]
+
+
+def test_workbench_can_disable_rsshub_auto_start_with_env(monkeypatch, tmp_path):
+    starts = []
+
+    def fake_ensure_rsshub(root):
+        starts.append(root)
+        return {"status": "started"}
+
+    monkeypatch.setenv("FI_AUTO_START_RSSHUB", "0")
+    monkeypatch.setattr("web_workbench.app.ensure_rsshub", fake_ensure_rsshub)
+    write_repo_fixture(tmp_path)
+
+    with TestClient(create_app(repo_root=tmp_path, runner=FakeRunner())) as client:
+        response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert starts == []
+
+
 def write_repo_fixture(root):
     write(root, "config/user-profile.yml", sample_profile_yaml())
     write(root, "config/sources.yml", sample_sources_yaml())

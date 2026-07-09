@@ -71,7 +71,7 @@ def create_app(
     app.state.auto_start_rsshub = (
         auto_start_rsshub
         if auto_start_rsshub is not None
-        else os.environ.get("FI_AUTO_START_RSSHUB") == "1"
+        else _auto_start_rsshub_from_env()
     )
     app.state.rsshub_start_result = {"status": "disabled"}
     app.state.allowed_origins = {
@@ -80,6 +80,13 @@ def create_app(
         if normalized
     }
     return app
+
+
+def _auto_start_rsshub_from_env() -> bool:
+    raw = os.environ.get("FI_AUTO_START_RSSHUB")
+    if raw is None:
+        return True
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
 
 
 def _allowed_origins_from_env() -> list[str]:

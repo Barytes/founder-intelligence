@@ -8,6 +8,12 @@ Start here when working on this repository.
 - [Current Web App Architecture](web-app/architecture.md): explains the implemented FastAPI local Web app architecture, routes, frontend data flow, refresh runner, and runtime boundaries.
 - [YAML Deterministic Pipeline](yaml-deterministic-pipeline.md): explains how YAML configuration drives the deterministic pipeline, what each YAML file does, and how each one participates in code flow.
 - [Agent Core](agent-core/index.md): explains the implemented Agentic Core architecture, runtime flow, configuration model, workbench, and known risks.
+- [L3-L4-L5 Agentic Roadmap](agent-roadmap/l3-l4-l5-roadmap.md): explains the staged path from tool contracts to fixed agent workflow to agentic controller.
+- [L3 Tool Contract Architecture](agent-roadmap/l3-tool-contract-architecture.md): defines the L3 tool boundary, contracts, permissions, and L4/L5 extension path.
+- [L3 Tool Contract Implementation Plan](agent-roadmap/l3-tool-contract-implementation-plan.md): provides the executable implementation plan for controlled L3 runtime tools.
+- [L3 Tool Contract Evaluation Plan](agent-roadmap/l3-tool-contract-evaluation-plan.md): defines acceptance gates, reward-hack checks, and verification commands for L3.
+- [L3 Tool Contract Pressure Test](agent-roadmap/l3-tool-contract-pressure-test.md): records plan vulnerabilities found and the design revisions that close them.
+- [L3.5 Python Pipeline Migration Plan](agent-roadmap/l3-5-python-pipeline-migration-plan.md): explains how to replace the transitional Ruby wrapper with a Python-native pipeline while preserving L3 tool contracts.
 
 ## Feature Documents
 

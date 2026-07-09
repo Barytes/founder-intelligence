@@ -14,7 +14,7 @@ src/agentic-core/
 
 `agentic_core` 是可嵌入组件，负责配置加载、LLM provider 适配、工具注册、对话循环和工具调用。`web_workbench` 是本机开发入口，负责聊天、独立设置页、provider 配置、API key 写入和调试展示。
 
-当前 Agentic Core 只绑定当前项目的本地文件和本地工具，不负责 RSS 抓取。RSS 抓取仍由 `src/*.rb` 的确定性 pipeline 完成。
+当前 Agentic Core 绑定当前项目的本地文件和本地工具。Agent tool path 的 refresh 由 Python-native deterministic pipeline 完成；当前实现仍是 RSS-only，不会启用 MCP/API/HTML source template。
 
 ## 核心模块
 
@@ -32,13 +32,24 @@ agentic_core/
   tools/
     registry.py
     founder_tools.py
+    pipeline_tools.py
+    runtime_tools.py
+  pipeline/
+    fetch_rss.py
+    ingest_adapter_output.py
+    store_canonical_jsonl.py
+    build_signals.py
+    runner.py
 ```
 
 - `schemas.py` 定义配置、provider、tool、run result 等 Pydantic model。
 - `config.py` 读取 `config/agentic-core.example.yml`、可选本机 `config/agentic-core.local.yml` 和 `.env`，并根据 active provider profile 派生实际运行 provider。
 - `providers/openai_compatible.py` 通过 OpenAI-compatible Chat Completions API 调用模型。
-- `tools/registry.py` 注册工具、导出 provider tool schema，并执行工具 handler。
-- `tools/founder_tools.py` 提供当前三个本地工具：读取 signals、读取 canonical items、写 agentic artifact。
+- `tools/registry.py` 注册工具、导出 provider tool schema，并在执行 handler 前做本地参数校验。
+- `tools/founder_tools.py` 提供本地 artifact 工具：读取 signals、读取 canonical items、写 agentic artifact。
+- `tools/runtime_tools.py` 提供只读运行状态工具：读取 refresh status 和最新 store run。
+- `tools/pipeline_tools.py` 提供受控 workflow 工具：调用 Python-native pipeline runner 触发 RSS-only refresh。
+- `pipeline/` 提供 Python-native deterministic pipeline，用于 Agent tool path 的 RSS fetch、ingestion、store、signal build 和 runner orchestration。
 - `core.py` 实现 Agentic Core 对话循环。
 - `run.py` 提供 CLI smoke 入口。
 
@@ -108,9 +119,16 @@ LLM complete(messages, tools)
 
 - `read_signals`：读取 repo 内 JSON，默认 `data/signals/latest.json`。
 - `read_canonical_items`：读取 repo 内 JSON，默认 `data/canonical-items/latest.json`。
+- `read_refresh_status`：读取固定路径 `data/app/refresh-status.json`，缺失时返回 `idle`。
+- `read_latest_run`：读取 `data/store/runs/*.jsonl` 中最新一条 run record。
+- `run_refresh_pipeline`：通过 Python-native `agentic_core.pipeline.runner.PipelineRunner` 触发一次 RSS-only refresh。
 - `write_agentic_artifact`：只允许写到 `data/agentic/` 下。
 
-这些工具不会抓取外部数据，不会执行 shell，不会修改 `config/`。
+`read_signals` 和 `read_canonical_items` 的 provider-facing schema 不暴露 path 参数；测试和本机 caller 可通过 context 覆盖 fixture path。`ToolRegistry.run` 会在本地执行前拒绝 schema 外参数，因此 provider schema 不是唯一边界。
+
+`run_refresh_pipeline` 不接受 command、argv、script、path、source id 或 config path。它调用 Python-native runner，由 runner 负责 lock、status、产物校验、失败保护和发布语义。
+
+这些工具不会执行任意 shell，不会修改 `config/`。`run_refresh_pipeline` 会按当前 RSS-only pipeline 抓取外部 RSSHub 信息源，但不会启用 MCP/API/HTML source template。
 
 ## Web 工作台
 
@@ -155,8 +173,8 @@ Agent 主要 API：
 5. **Prompt injection**
    模型会读取本地 signals/canonical items。来自 RSS 的内容可能包含指令式文本，模型可能被影响。当前工具边界较窄，但最终文本仍可能受污染。
 
-6. **工具读 repo 内任意 JSON**
-   `read_signals` 和 `read_canonical_items` 允许传入 repo 内路径。它们禁止 repo 外路径，但如果 repo 内存在敏感 JSON，模型可能通过工具读取。
+6. **工具路径边界依赖 schema 和 registry 校验**
+   `read_signals` 和 `read_canonical_items` 的模型可见 schema 已不暴露 path，但本地 caller context 仍可覆盖测试路径。后续新增工具时必须继续保持 provider schema、本地参数校验和 handler allowlist 三层一致。
 
 7. **缺少 provider 请求限流和预算控制**
    当前没有 token/cost budget、并发限制或速率限制。误操作可能造成较高 API 调用成本。
