@@ -53,7 +53,9 @@ agentic_core/
 `provider_profiles` 同时承载 provider templates 和已保存配置。工作台 UI 会把它们拆成两个概念：
 
 - `Provider Type`：OpenAI、DeepSeek、OpenRouter、Custom 等模板。
-- `Saved Configuration`：用户保存过的可直接使用的配置。
+- `Saved Configuration`：用户保存过的可直接使用的配置，只来自 gitignored `config/agentic-core.local.yml` 中实际存在的 profile。
+
+默认模板不会显示为 saved configuration。没有保存过任何配置时，`Saved Configuration` 只显示 `New Configuration`；OpenAI、DeepSeek、OpenRouter、Custom 仍只在 `Provider Type` 中作为模板出现。
 
 保存新配置时，`Config Name` 会生成 profile id 和 env var。例如：
 

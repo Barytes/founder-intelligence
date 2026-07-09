@@ -19,44 +19,25 @@
 - 根据用户画像和规则计算重要性、相关性和总分
 - 生成 `data/signals/latest.json`
 - 生成 `data/dashboard/latest.md`
-- 生成 `data/dashboard/latest.html`
+- 生成 `data/dashboard/generated-latest.html`
 - 生成辅助信息源看板 `data/dashboard/source-dashboard.html`
+- 通过 `web_workbench.app` 启动统一 FastAPI 本地 Web app，读取最新成功 signals
+- 在同一 HTTP 服务下通过 `/agent` 提供本地 Agentic Core 工作台
+- 在 `/settings` 管理本机 provider 配置和 GitHub token
+- Web app 可编辑 `config/user-profile.yml` 和 `config/sources.yml`
+- Web app 可手动触发一次 RSS-only refresh，refresh 暂时仍调用现有 Ruby scripts
 
 它暂时不包含：
 
 - 常驻调度器
 - 数据库
-- 远程多人 Chat UI
+- 生产级远程多人 Chat UI
 - 自动 LLM 总结
 - 无边界 Agentic planning
 - 自动行动执行
 - 长期记忆
 - 可运行的 MCP/API/HTML fetcher
-当前实现已经具备：
-
-- 从 RSSHub 抓取启用的 RSS/Atom 信息源。
-- 将原始条目转换成 canonical item。
-- 清理 HTML、标准化链接和时间。
-- 生成内容 hash 和去重 key。
-- 对条目打质量标记。
-- 将 canonical item 追加写入 JSONL store。
-- 根据 `config/user-profile.yml` 和 `config/signal-rules.yml` 计算重要性、相关性和总分。
-- 生成 `data/signals/latest.json` 和 `data/dashboard/latest.md`。
-- 通过 `web_workbench.app` 启动统一 FastAPI 本地 Web app，读取最新成功 signals。
-- 在同一 HTTP 服务下通过 `/agent` 提供 Agentic Core 工作台。
-- Web app 可编辑 `config/user-profile.yml` 和 `config/sources.yml`。
-- Web app 可手动触发一次 RSS-only refresh，refresh 暂时仍调用现有 Ruby scripts。
-
-当前实现不包含：
-
-- 自动调度器。
-- 数据库。
-- Chat UI。
-- LLM 总结。
-- Agentic planning。
-- 自动行动执行。
-- 长期记忆。
-- 可运行的 MCP/API/HTML/file fetcher。
+- 可运行的 file fetcher
 
 ## 目录结构
 
@@ -159,9 +140,9 @@ data/store/runs/YYYY-MM-DD.jsonl
 
 它是 append-only 文件存储，不是数据库。
 
-第六层是 signal processing、Web app 和 Agent Workbench。
+第六层是 signal processing、Web app、Agent Workbench 和本机配置页。
 
-`src/build_signals.rb` 生成 signal JSON 和 Markdown。`src/agentic-core/web_workbench/app.py` 负责提供本地 FastAPI Web app 和 `/agent` 工作台，`src/agentic-core/web_workbench/pipeline_runner.py` 负责把页面 refresh 转换成一次固定顺序的 Ruby pipeline 执行。
+`src/build_signals.rb` 生成 signal JSON 和 Markdown。`src/agentic-core/web_workbench/app.py` 负责提供本地 FastAPI Web app、`/agent` 工作台和 `/settings` 配置页，`src/agentic-core/web_workbench/pipeline_runner.py` 负责把页面 refresh 转换成一次固定顺序的 Ruby pipeline 执行。
 
 ## 数据流
 
@@ -210,7 +191,9 @@ data/dashboard/source-dashboard.html
 
 - 当前抓取路径只有 RSS。
 - `schedule.refresh_interval_minutes` 仍只是配置字段，没有调度器消费。
-- `config/user-profile.yml` 和 `config/sources.yml` 可从 Web app 编辑；其他 `config/` 文件仍需手动编辑。
+- `config/user-profile.yml` 和 `config/sources.yml` 可从 Web app 编辑。
+- `/settings` 可写入 `.env` 中的 provider API keys 和 `GITHUB_ACCESS_TOKEN`，并可写入 gitignored `config/agentic-core.local.yml`。
+- 其他已提交的 `config/` 文件仍需手动编辑。
 - 当前 HTTP 后端是 Python/FastAPI；迁移前 Ruby Web app 后端已移除。
 - Ruby scripts 仍是 refresh pipeline 的业务执行器。
 - Web app 的 source 启用/停用会写回 `config/sources.yml`。
