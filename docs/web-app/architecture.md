@@ -1,13 +1,20 @@
 # 当前 Web App 架构
 
-本文说明当前已经实现的本地 Web app 架构和工作原理。它描述的是 `src/web/` 里的真实运行路径，不是未来重构设想。历史重构计划已归档到 [archive/web-app/refactor-plan.md](../archive/web-app/refactor-plan.md)。
+本文说明当前已经实现的本地 Web app 架构和工作原理。它描述的是 `web_workbench.app` 统一 FastAPI 后端、`src/web/public/` dashboard 前端和 `src/agentic-core/web_workbench/static/` Agent/Settings 前端的真实运行路径，不是未来重构设想。历史重构计划已归档到 [archive/web-app/refactor-plan.md](../archive/web-app/refactor-plan.md)。
 
 ## 总览
 
-当前 Web app 是一个本地常驻控制台，HTTP 后端已经统一到 Python/FastAPI。它读取最近一次成功生成的 signals，允许用户从页面触发一次 RSS-only pipeline refresh，并提供两个真实配置编辑入口：
+当前 Web app 是一个本地常驻控制台，HTTP 后端已经统一到 Python/FastAPI。它读取最近一次成功生成的 signals，允许用户从页面触发一次 RSS-only pipeline refresh，并提供 dashboard 配置入口和本机 Agent 设置入口。
+
+Dashboard 配置入口：
 
 - `config/user-profile.yml`：个性化评分 profile，保存后下一次 refresh 参与后端评分。
 - `config/sources.yml`：真实 source registry，保存或启停 RSS source 后下一次 refresh 生效。
+
+Agent/settings 配置入口：
+
+- `.env`：provider API keys 和 `GITHUB_ACCESS_TOKEN`，页面/API 只显示脱敏状态。
+- `config/agentic-core.local.yml`：gitignored 本机 provider profile、model 和 base URL 覆盖。
 
 ```text
 Browser
@@ -172,7 +179,9 @@ sources
 - `PUT /api/profile` 要求 body 中的 `content` 是合法 YAML mapping，包含 `version`、`user.name`，并且至少有一个可用于匹配的 interest、watch entity 或 goal keyword。
 - `PUT /api/sources` 要求 body 中的 `content` 是合法 YAML mapping，包含 `version` 和 `sources` 数组；每个真实 RSS source 必须有唯一 `id`、`name`、`provider`、`category`、布尔 `enabled` 和 HTTP(S) `connection.rss_url`。
 - `POST /api/sources/:id` 只允许切换 `source_type: rss` 的真实 source，不允许启用 source template 或未实现 source type。FastAPI 后端保留 `PATCH` 兼容，但浏览器运行路径使用 `POST`。
-- 写文件使用临时文件再 `mv` 覆盖目标文件。
+- `POST /api/agent/provider-settings` 写入 provider secret 到 `.env`，并把 model/base URL/active saved profile 写入 gitignored `config/agentic-core.local.yml`。`Saved Configuration` 只包含 local config 中用户实际保存过的 profile；OpenAI、DeepSeek、OpenRouter、Custom 只作为 `Provider Type` 模板展示。
+- `PUT /api/settings/env` 只写入 `GITHUB_ACCESS_TOKEN` 到 `.env`，响应只返回配置状态和脱敏 preview。
+- `DashboardRepository` 写 profile/sources 时使用临时文件再 `mv` 覆盖目标文件。当前 provider/local settings 写入仍是直接改写 `.env` 或 `config/agentic-core.local.yml`，属于本机开发便利实现，不是生产级 secret/config storage。
 
 ## Refresh Runner
 
@@ -266,7 +275,8 @@ failed_stale_lock
 当前实现边界必须按真实代码理解：
 
 - 实现的 fetch path 只有 RSS。
-- `config/user-profile.yml` 和 `config/sources.yml` 已经可以从 Web app 写入；其他 `config/` 文件仍不提供页面编辑入口。
+- `config/user-profile.yml` 和 `config/sources.yml` 已经可以从 Web app 写入。
+- `.env` 和 gitignored `config/agentic-core.local.yml` 可从 `/settings` 写入；已提交的其他 `config/` 文件仍不提供页面编辑入口。
 - MCP、API、HTML、file source template 可以展示为未来扩展，但当前不能启用为可运行 fetcher。
 - refresh 是用户点击触发，不是 scheduler 触发。
 - refresh 当前仍是同步 HTTP 请求；页面会等待整个 pipeline 完成。
@@ -294,6 +304,8 @@ tests/test_workbench_api.py
 - `/api/sources/:id` 可启用/停用真实 RSS source，并拒绝不存在的 source。
 - `/api/refresh` 拒绝 cross-origin 请求。
 - `/api/refresh` 拒绝命令参数。
+- `/api/agent/provider-settings` 和 `/api/settings/env` 拒绝 cross-origin 写入，且不在响应中泄露 secret。
+- `Saved Configuration` 不展示内置 provider templates，只展示 local config 中已保存的 profile。
 - `DataRepository` 区分 empty、valid 和 corrupt JSON。
 - `PipelineRunner` 成功 refresh 后发布 `data/signals/latest.json`。
 - refresh 失败不覆盖旧的成功 signals。
@@ -303,7 +315,7 @@ tests/test_workbench_api.py
 
 ```text
 src/agentic-core/web_workbench/app.py
-  当前统一 FastAPI HTTP 入口，服务 dashboard、agent workbench、dashboard API 和 agent API。
+  当前统一 FastAPI HTTP 入口，服务 dashboard、agent workbench、settings 页面、dashboard API 和 agent/settings API。
 
 src/agentic-core/web_workbench/dashboard_repository.py
   读取 latest signals、latest run、refresh status、profile 和 sources，并写入允许编辑的配置文件。
@@ -322,4 +334,7 @@ src/web/public/app.js
 
 src/web/public/styles.css
   控制台视觉样式和响应式布局。
+
+src/agentic-core/web_workbench/static/
+  Agent Workbench 和 Settings 前端静态资源。
 ```

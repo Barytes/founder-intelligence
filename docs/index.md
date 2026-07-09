@@ -29,7 +29,9 @@ Start here when working on this repository.
 - MCP/API/HTML source templates and contracts exist, but no runnable fetcher is implemented for them yet.
 - Schedule fields exist in configuration, but no scheduler consumes them yet.
 - `config/sources.yml` is the only source registry used by the main demo flow.
-- The Web app can edit `config/user-profile.yml` and `config/sources.yml`; other `config/` files remain manual.
+- The Web app can edit `config/user-profile.yml` and `config/sources.yml`.
+- The settings page can write local secrets to `.env` and provider overrides to gitignored `config/agentic-core.local.yml`.
+- Other committed `config/` files remain manual unless a document or feature explicitly says otherwise.
 
 ## Archive
 

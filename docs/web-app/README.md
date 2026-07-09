@@ -18,8 +18,10 @@ Current runtime facts:
 
 - The Web app entrypoint is `web_workbench.app` via FastAPI/Uvicorn.
 - The browser shell is served from `src/web/public/`.
+- Agent Workbench and Settings are served from `src/agentic-core/web_workbench/static/`.
 - Runtime signal data comes from `data/signals/latest.json`.
 - The Web app can edit `config/user-profile.yml` and `config/sources.yml`.
+- Settings can write local provider secrets/GitHub token to `.env` and provider overrides to gitignored `config/agentic-core.local.yml`.
 - The implemented fetch path remains RSS-only.
 - Refresh still executes the existing Ruby pipeline scripts as command-line steps.
 - MCP/API/HTML/file source templates are not runnable fetchers in the current MVP.

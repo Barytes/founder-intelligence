@@ -8,9 +8,11 @@
 
 - Web app 首页由 `src/web/public/` 提供，不依赖旧静态 sample data。
 - Agent Workbench 由同一个 FastAPI app 在 `/agent` 提供。
+- Settings 页面由同一个 FastAPI app 在 `/settings` 提供。
 - 页面数据来自 `/api/signals/latest`、`/api/refresh/status`、`/api/sources`。
 - `user-profile.yml` 编辑器真实读写 `config/user-profile.yml`。
 - source overlay 真实读写 `config/sources.yml`。
+- Settings 页面可写 provider settings 到 `.env`/`config/agentic-core.local.yml`，并可写 `GITHUB_ACCESS_TOKEN` 到 `.env`。
 - 未实现的 MCP/API/HTML/file source 不会被当前 refresh 执行。
 - Python refresh runner 调用 Ruby RSS-only pipeline scripts，并保留 latest-success 语义。
 - 安全边界仍然拒绝跨 origin 写操作和命令参数。
@@ -39,6 +41,9 @@ ruby -c src/build_signals.rb
 - `/api/refresh` 的 same-origin、命令参数拒绝和同步返回语义。
 - Python `PipelineRunner` 的成功发布、失败不覆盖、lock、store summary、signal diff。
 - Agent Workbench provider 和 chat API 在 `/api/agent/*` 下可用，旧 `/api/*` agent aliases 暂时保留。
+- `/settings`、`/api/settings/env`、GitHub token 脱敏状态和写入 `.env`。
+- Provider settings 和 GitHub token 写入拒绝 cross-origin 请求，且不泄露 secret。
+- `Saved Configuration` 只包含 local config 中用户保存过的 profile，不包含 OpenAI/DeepSeek/OpenRouter 默认模板。
 
 ## HTTP Smoke
 
@@ -53,8 +58,10 @@ FI_AUTO_START_RSSHUB=1 PYTHONPATH=src/agentic-core uv run python -m uvicorn web_
 ```bash
 curl -s -o /tmp/fi-main-check.html -w "%{http_code} %{content_type}\n" http://127.0.0.1:4567/
 curl -s -o /tmp/fi-agent-check.html -w "%{http_code} %{content_type}\n" http://127.0.0.1:4567/agent
+curl -s -o /tmp/fi-settings-check.html -w "%{http_code} %{content_type}\n" http://127.0.0.1:4567/settings
 curl -s -w "\n%{http_code}\n" http://127.0.0.1:4567/api/health
 curl -s -w "\n%{http_code}\n" http://127.0.0.1:4567/api/agent/default-config
+curl -s -w "\n%{http_code}\n" http://127.0.0.1:4567/api/settings/env
 ```
 
 期望：
@@ -62,8 +69,10 @@ curl -s -w "\n%{http_code}\n" http://127.0.0.1:4567/api/agent/default-config
 ```text
 200 text/html; charset=utf-8
 200 text/html; charset=utf-8
+200 text/html; charset=utf-8
 {"status":"ok"} or pretty JSON equivalent with 200
-Agent config JSON with 200 and no API key secret
+Agent config JSON with 200 and no API key secret. Default provider templates appear under `provider_templates`; `saved_configs.items` is empty until local profiles are saved.
+Settings env JSON with 200 and no GitHub token secret
 ```
 
 ## 真实浏览器 Smoke
@@ -75,7 +84,9 @@ rm -rf /private/tmp/fi-browser-root
 mkdir -p /private/tmp/fi-browser-root/config /private/tmp/fi-browser-root/data/signals
 cp config/user-profile.yml /private/tmp/fi-browser-root/config/user-profile.yml
 cp config/sources.yml /private/tmp/fi-browser-root/config/sources.yml
+cp config/agentic-core.example.yml /private/tmp/fi-browser-root/config/agentic-core.example.yml
 cp data/signals/latest.json /private/tmp/fi-browser-root/data/signals/latest.json
+touch /private/tmp/fi-browser-root/.env
 FI_REPO_ROOT=/private/tmp/fi-browser-root FI_ALLOWED_ORIGINS=http://127.0.0.1:4568,http://localhost:4568 PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 4568
 ```
 
@@ -83,6 +94,9 @@ FI_REPO_ROOT=/private/tmp/fi-browser-root FI_ALLOWED_ORIGINS=http://127.0.0.1:45
 
 - 打开 `http://127.0.0.1:4568/`，确认 command bar、profile 入口、source folders 渲染。
 - 通过顶部导航进入 `/agent`，再从 Agent Workbench 返回 `/`。
+- 通过顶部导航进入 `/settings`，确认 Provider Type 展示默认模板，Saved Configuration 初始只显示 New Configuration。
+- 在 `/settings` 保存一个命名 provider 配置，确认它出现在 Saved Configuration，且默认模板不作为 saved config 出现。
+- 在 `/settings` 保存 GitHub token，确认页面只显示脱敏状态，临时 root `.env` 被写入。
 - 打开 `user-profile.yml` modal，编辑合法 profile，保存后状态显示 `已保存 config/user-profile.yml；下次刷新生效`。
 - 打开 source folder overlay，启用或停用真实 RSS source，确认按钮和 meta 状态改变。
 - 打开 `sources.yml` 编辑器，确认原文包含 `version: 1` 和真实 source id，保存后状态显示 `已保存 config/sources.yml；下次刷新生效`。

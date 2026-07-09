@@ -15,12 +15,14 @@
 
 当前 Web app 已经不再是静态 HTML demo。它现在具备以下真实功能：
 
-- FastAPI 在同一个 HTTP 服务下提供 `/` 信号控制台和 `/agent` Agent Workbench。
+- FastAPI 在同一个 HTTP 服务下提供 `/` 信号控制台、`/agent` Agent Workbench 和 `/settings` 本机配置页。
 - 首页从 `/api/signals/latest` 读取最近一次成功 signals，不再依赖 `assets/sample-data.js`。
 - 点击“刷新”会触发 RSS-only pipeline，并发布新的 `data/signals/latest.json`。
 - 页面会展示本次 refresh 的处理数、新增数、重复数，以及推荐队列是否变化。
 - 页面编辑 `config/user-profile.yml` 后，下一次 refresh 会使用新 profile 参与评分。
 - 页面读取和编辑 `config/sources.yml`，并可启用/停用真实 RSS source。
+- `/settings` 可以保存 provider 配置和 GitHub token；secret 只写入 `.env`，响应和页面只显示脱敏状态。
+- `Saved Configuration` 只显示用户保存到 `config/agentic-core.local.yml` 的配置，不显示 OpenAI/DeepSeek/OpenRouter 默认模板。
 - 未实现的 MCP/API/HTML/file source template 只能作为不可运行扩展展示，不能被启用为当前 fetch path。
 
 ## 已修复问题
@@ -41,6 +43,7 @@
 | signal score 单位不清 | 已缓解。列表和详情标注总分为 `/100`，详情说明后端 1-5 到 0-100 的换算 | `src/web/public/app.js` |
 | profile/source 保存前校验过浅 | 已修复基础语义校验。profile 要有用户和画像词；RSS source 要有可抓取 URL，未实现 source type 不能启用 | `validate_profile_config`、`validate_sources_config` |
 | 真实浏览器中 source toggle 失败 | 已修复。前端运行路径使用 `POST /api/sources/:id`，FastAPI 后端同时保留 `PATCH` 兼容 | `src/web/public/app.js`、`src/agentic-core/web_workbench/app.py` |
+| Settings 中默认 provider templates 被显示为 Saved Configuration | 已修复。Saved Configuration 只来自 gitignored local config 中实际保存的 profile，默认模板只作为 Provider Type 展示 | `saved_configs`、`tests/test_workbench_api.py` |
 
 ## 2026-07-09 复查新增漏洞
 
@@ -55,7 +58,7 @@
 
 ## 剩余问题评估
 
-| ID | 剩余问题 | 影响 | 修复难度 | 是否需要代码架构改动 | 是否建议在 `web-app-upgrade` 修复 |
+| ID | 剩余问题 | 影响 | 修复难度 | 是否需要代码架构改动 | 是否建议在当前统一后端分支修复 |
 | --- | --- | --- | --- | --- | --- |
 | R1 | Mutating API 只做 same-origin 弱保护，缺少 loopback/token 级保护 | 非 loopback 暴露时存在配置写入和 refresh 触发风险 | 小到中 | 否，若引入后台用户/会话才需要架构改动 | 建议当前修。它直接影响本地 Web app 的安全边界 |
 | R2 | `POST /api/sources/:id` 启停路径绕过完整 source 校验 | 可把不完整 RSS source 标成 runnable，破坏下一次 refresh | 小 | 否 | 建议当前修。属于小补丁且影响已展示功能真实性 |
@@ -88,7 +91,7 @@ fetch_rss -> ingest_adapter_output -> store_canonical_jsonl -> build_signals -> 
 
 ## 当前分支建议
 
-考虑 `web-app-upgrade` 的目标是把静态 HTML demo 升级成可用 Web app，并保持每项已展示功能真实可用，真实浏览器 smoke 已覆盖 profile modal、source overlay、source toggle 和 source YAML editor。2026-07-09 复查后，V1/V2/V5/V6 更接近已展示功能的可靠性和安全边界，建议在合并前或紧随合并后的修复分支内优先处理。
+考虑当前 FastAPI 统一后端分支的目标是把本地 Web app、Agent Workbench 和设置页收束到一个真实可运行的 HTTP 服务，并保持每项已展示功能真实可用，真实浏览器 smoke 应覆盖 profile modal、source overlay、source toggle、source YAML editor、Agent Workbench 和 Settings 页面。2026-07-09 复查后，V1/V2/V5/V6 更接近已展示功能的可靠性和安全边界，建议在合并前或紧随合并后的修复分支内优先处理。
 
 R2 是否必须在本分支完成，取决于当前 RSS refresh 的实际耗时。如果 refresh 经常超过几秒，应升级为异步 job；如果当前 MVP 仍保持短耗时，可以先把同步 refresh 作为明确限制记录下来。
 
