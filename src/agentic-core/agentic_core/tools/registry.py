@@ -13,6 +13,10 @@ class ToolNotFoundError(RuntimeError):
     pass
 
 
+class ToolInvalidArgumentsError(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class ToolDefinition:
     name: str
@@ -29,6 +33,24 @@ class ToolDefinition:
                 "parameters": self.parameters,
             },
         }
+
+
+def _validate_arguments(tool: ToolDefinition, arguments: dict[str, Any]) -> None:
+    parameters = tool.parameters or {}
+    properties = parameters.get("properties") or {}
+    required = parameters.get("required") or []
+
+    if parameters.get("type") == "object" and not isinstance(arguments, dict):
+        raise ToolInvalidArgumentsError("tool arguments must be an object")
+
+    if parameters.get("additionalProperties") is False:
+        unexpected = sorted(set(arguments) - set(properties))
+        if unexpected:
+            raise ToolInvalidArgumentsError(f"unexpected argument: {unexpected[0]}")
+
+    for name in required:
+        if name not in arguments:
+            raise ToolInvalidArgumentsError(f"missing required argument: {name}")
 
 
 class ToolRegistry:
@@ -62,4 +84,5 @@ class ToolRegistry:
             raise ToolNotFoundError(f"unknown tool: {name}")
         if not self.config.get(name, ToolConfig(enabled=True)).enabled:
             raise ToolDisabledError(f"tool disabled: {name}")
+        _validate_arguments(tool, arguments)
         return tool.handler(arguments, context)

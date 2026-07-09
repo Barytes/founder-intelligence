@@ -6,7 +6,7 @@ import pytest
 
 from agentic_core.schemas import ToolConfig
 from agentic_core.tools import build_default_registry
-from agentic_core.tools.registry import ToolDisabledError, ToolRegistry
+from agentic_core.tools.registry import ToolDisabledError, ToolInvalidArgumentsError, ToolRegistry
 
 
 def test_tool_registry_runs_enabled_tool():
@@ -39,6 +39,42 @@ def test_tool_registry_rejects_disabled_tool():
         registry.run("echo", {}, {})
 
 
+def test_tool_registry_rejects_unknown_arguments_when_schema_forbids_them():
+    registry = ToolRegistry({"echo": ToolConfig(enabled=True)})
+    registry.register(
+        name="echo",
+        description="Echo text",
+        parameters={
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+        handler=lambda args, context: {"text": args["text"]},
+    )
+
+    with pytest.raises(ToolInvalidArgumentsError, match="unexpected argument"):
+        registry.run("echo", {"text": "hi", "path": "/tmp/secret.json"}, {})
+
+
+def test_tool_registry_rejects_missing_required_arguments():
+    registry = ToolRegistry({"echo": ToolConfig(enabled=True)})
+    registry.register(
+        name="echo",
+        description="Echo text",
+        parameters={
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+        handler=lambda args, context: {"text": args["text"]},
+    )
+
+    with pytest.raises(ToolInvalidArgumentsError, match="missing required argument"):
+        registry.run("echo", {}, {})
+
+
 def test_read_signals_reads_configured_file():
     registry = build_default_registry({"read_signals": ToolConfig(enabled=True)})
     allowed_path = Path.cwd() / "data" / "signals" / "latest.json"
@@ -57,6 +93,48 @@ def test_read_signals_rejects_outside_path():
 
     with pytest.raises(ValueError, match="path outside repository"):
         registry.run("read_signals", {}, {"signals_path": "/tmp/outside-signals.json"})
+
+
+def test_default_registry_exposes_l3_runtime_tools():
+    registry = build_default_registry(
+        {
+            "read_refresh_status": ToolConfig(enabled=True),
+            "read_latest_run": ToolConfig(enabled=True),
+            "run_refresh_pipeline": ToolConfig(enabled=True),
+        }
+    )
+
+    tool_names = {tool["function"]["name"] for tool in registry.provider_tools()}
+
+    assert "read_refresh_status" in tool_names
+    assert "read_latest_run" in tool_names
+    assert "run_refresh_pipeline" in tool_names
+
+
+def test_read_artifact_tools_do_not_expose_path_arguments_to_provider():
+    registry = build_default_registry(
+        {
+            "read_signals": ToolConfig(enabled=True),
+            "read_canonical_items": ToolConfig(enabled=True),
+        }
+    )
+
+    tools = {tool["function"]["name"]: tool for tool in registry.provider_tools()}
+
+    assert tools["read_signals"]["function"]["parameters"]["properties"] == {}
+    assert tools["read_canonical_items"]["function"]["parameters"]["properties"] == {}
+
+
+def test_read_artifact_tools_reject_model_supplied_path_arguments():
+    registry = build_default_registry(
+        {
+            "read_signals": ToolConfig(enabled=True),
+            "read_canonical_items": ToolConfig(enabled=True),
+        }
+    )
+
+    with pytest.raises(ToolInvalidArgumentsError, match="unexpected argument"):
+        registry.run("read_signals", {"path": "/tmp/outside-signals.json"}, {})
 
 
 def test_write_agentic_artifact_writes_json_and_markdown():
