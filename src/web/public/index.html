@@ -4,63 +4,60 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Founder Intelligence - 信号控制台</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=20260709-floating-preview" />
   </head>
   <body>
     <div class="console">
-      <header class="command-bar">
-        <section class="title-block">
-          <div class="title-head">
-            <small>Founder Intelligence / 本地</small>
-            <nav class="app-nav" aria-label="应用导航">
-              <a class="app-nav-link is-active" href="/">信号控制台</a>
-              <a class="app-nav-link" href="/agent">Agent Workbench</a>
-              <a class="app-nav-link" href="/settings">配置</a>
-            </nav>
-            <div class="title-actions">
-              <button class="user-md-button" id="refresh-button" type="button">刷新</button>
-              <button class="user-md-button" id="open-user-profile" type="button">编辑 user-profile.yml</button>
-            </div>
-          </div>
-          <h1>信号控制台</h1>
-          <p id="refresh-status">读取本地最新成功信号。</p>
-        </section>
-        <section class="stat-block">
-          <b id="stat-total">-</b>
-          <span>已处理资讯</span>
-        </section>
-        <section class="stat-block">
-          <b id="stat-high">-</b>
-          <span>高信号内容</span>
-        </section>
-        <section class="stat-block">
-          <b id="stat-sources">-</b>
-          <span>可运行来源</span>
-        </section>
-      </header>
-
       <main class="grid">
         <aside class="panel">
           <header class="panel-header">
             <h2>运行栈</h2>
             <i class="status-dot" aria-hidden="true"></i>
           </header>
+          <section class="side-command">
+            <small>Founder Intelligence / 本地</small>
+            <h1>信号控制台</h1>
+            <p id="refresh-status">读取本地最新成功信号。</p>
+            <nav class="side-nav" aria-label="应用导航">
+              <a class="side-nav-link is-active" href="/">信号控制台</a>
+              <a class="side-nav-link" href="/agent">智能体工作台</a>
+              <a class="side-nav-link" href="/settings">配置</a>
+            </nav>
+            <div class="side-actions">
+              <button class="side-action primary" id="refresh-button" type="button">刷新</button>
+              <button class="side-action" id="open-user-profile" type="button">编辑 user-profile.yml</button>
+            </div>
+            <div class="side-stats" aria-label="运行统计">
+              <section class="stat-block">
+                <b id="stat-total">-</b>
+                <span>已处理资讯</span>
+              </section>
+              <section class="stat-block">
+                <b id="stat-high">-</b>
+                <span>高信号内容</span>
+              </section>
+              <section class="stat-block">
+                <b id="stat-sources">-</b>
+                <span>可运行来源</span>
+              </section>
+            </div>
+          </section>
           <section class="pipeline">
             <div class="step">
               <div class="step-code">01</div>
-              <div><b>RSSHub 抓取</b><span>当前实现只运行 RSS source。</span></div>
+              <div><b>RSSHub 抓取</b><span>当前实现只运行 RSS 来源。</span></div>
             </div>
             <div class="step">
               <div class="step-code">02</div>
-              <div><b>标准化</b><span>转换为 canonical item。</span></div>
+              <div><b>标准化</b><span>转换为统一资讯项。</span></div>
             </div>
             <div class="step">
               <div class="step-code">03</div>
-              <div><b>规则评分</b><span>根据 user profile 和 signal rules 计算分数。</span></div>
+              <div><b>规则评分</b><span>根据个人画像和信号规则计算分数。</span></div>
             </div>
             <div class="step">
               <div class="step-code">04</div>
-              <div><b>信号输出</b><span>发布最近一次成功 signals。</span></div>
+              <div><b>信号输出</b><span>发布最近一次成功信号。</span></div>
             </div>
           </section>
           <section class="source-folders" id="source-folders"></section>
@@ -85,6 +82,8 @@
       </main>
     </div>
 
+    <div class="news-preview-layer" id="news-preview-layer" aria-live="polite"></div>
+
     <div class="user-md-modal" id="user-profile-modal" hidden>
       <section class="user-md-dialog" role="dialog" aria-modal="true" aria-labelledby="user-profile-title">
         <header class="user-md-header">
@@ -107,7 +106,7 @@
               </div>
               <div>
                 <dt>刷新生效</dt>
-                <dd>下一次 refresh 会读取这份 YAML。</dd>
+                <dd>下一次刷新会读取这份 YAML。</dd>
               </div>
               <div>
                 <dt>格式要求</dt>
@@ -142,12 +141,12 @@
         <section class="source-config-panel" id="source-config-panel" hidden>
           <header>
             <h3>config/sources.yml</h3>
-            <span>保存后下一次刷新会读取新的 enabled RSS 来源</span>
+            <span>保存后下一次刷新会读取新的已启用 RSS 来源</span>
           </header>
           <textarea id="source-config-text" spellcheck="false"></textarea>
         </section>
         <footer class="folder-expanded-footer">
-          <span id="folder-status">刷新会读取 config/sources.yml 中 enabled=true 的 RSS 来源</span>
+          <span id="folder-status">刷新会读取 config/sources.yml 中已启用的 RSS 来源</span>
           <div class="folder-actions">
             <button class="folder-reset" id="edit-source-config" type="button">编辑 sources.yml</button>
             <button class="folder-reset" id="save-source-config" type="button" hidden>保存 sources.yml</button>
@@ -157,6 +156,6 @@
       </section>
     </div>
 
-    <script src="/app.js"></script>
+    <script src="/app.js?v=20260709-floating-preview"></script>
   </body>
 </html>

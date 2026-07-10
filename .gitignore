@@ -1,8 +1,10 @@
 .DS_Store
 .env
+.venv/
 config/agentic-core.local.yml
 __pycache__/
 *.pyc
+*.egg-info/
 uv.lock
 Git_Trending.rtf
 data/adapter-output/*.json

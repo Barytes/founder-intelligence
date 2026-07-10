@@ -8,6 +8,65 @@ const CATEGORY_LABELS = {
   founder_research: "创始人研究",
   uncategorized: "未分类"
 };
+const TAG_LABELS = {
+  "ai-agent": "AI 智能体",
+  "ai-coding": "AI 编程",
+  "china-market": "中国市场",
+  context: "上下文",
+  "creator-economy": "创作者经济",
+  "developer-tools": "开发者工具",
+  github: "GitHub",
+  "long-form": "长内容",
+  mcp: "MCP 协议",
+  "open-source": "开源",
+  "public-opinion": "公众讨论",
+  reference: "参考源",
+  "social-signal": "社交信号",
+  "startup-signals": "创业信号",
+  trending: "趋势热点",
+  video: "视频内容",
+  wechat: "微信",
+  xiaohongshu: "小红书",
+  rss: "RSS 来源"
+};
+const SOURCE_NAME_LABELS = {
+  "github-trending-daily": "GitHub 今日趋势",
+  "zhihu-hot": "知乎热榜",
+  "bilibili-popular-all": "B 站综合热门",
+  "github-activity-diygod": "GitHub 活动参考"
+};
+const SOURCE_TYPE_LABELS = {
+  rss: "RSS 来源",
+  mcp: "MCP 来源",
+  api: "API 来源",
+  html: "网页来源",
+  file: "文件来源"
+};
+const STEP_LABELS = {
+  fetch_rss: "抓取 RSS",
+  ingest_adapter_output: "标准化资讯",
+  store_canonical_jsonl: "写入本地库",
+  build_signals: "生成信号"
+};
+const SCORE_DIMENSIONS = [
+  { key: "career", label: "职业", sectionTitle: "职业栏目", color: "var(--green)", description: "与你的工作目标、技术栈和创业判断最相关" },
+  { key: "interest", label: "兴趣", sectionTitle: "兴趣栏目", color: "var(--blue)", description: "命中你的长期关注主题和画像关键词" },
+  { key: "freshness", label: "新鲜", sectionTitle: "新鲜栏目", color: "var(--amber)", description: "最近出现或刚被抓取，适合快速扫一眼" },
+  { key: "explore", label: "探索", sectionTitle: "探索栏目", color: "var(--rust)", description: "不完全贴合旧画像，但可能打开新方向" }
+];
+const SECTION_LIMIT = 8;
+const PROFILE_TERM_LABELS = {
+  "ai agents": "AI 智能体",
+  "ai agent": "AI 智能体",
+  agent: "智能体",
+  "ai coding": "AI 编程",
+  "coding agent": "编程智能体",
+  mcp: "MCP 协议",
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  claude: "Claude",
+  chatgpt: "ChatGPT"
+};
 const SOURCE_VISUALS = {
   github: { logo: "GH", logoSrc: "assets/brand-logos/github.svg", logoBg: "#24292f", logoFg: "#ffffff" },
   zhihu: { logo: "知", logoSrc: "assets/brand-logos/zhihu.svg", logoBg: "#e9f1ff", logoFg: "#1769ff" },
@@ -16,7 +75,6 @@ const SOURCE_VISUALS = {
   xiaohongshu: { logo: "红", logoSrc: "assets/brand-logos/xiaohongshu.svg", logoBg: "#fff0f0", logoFg: "#ff2442" },
   rss: { logo: "RSS", logoSrc: "assets/brand-logos/rss.svg", logoBg: "#fff5e7", logoFg: "#d66b00" }
 };
-
 let state = {
   payload: null,
   sources: [],
@@ -26,6 +84,9 @@ let state = {
   profilePath: "config/user-profile.yml",
   selectedId: "",
   cluster: "全部",
+  previewId: "",
+  previewSection: "",
+  previewRect: null,
   openFolder: "",
   error: ""
 };
@@ -57,7 +118,7 @@ async function fetchJson(path, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(payload.message || `${path} failed with HTTP ${response.status}`);
+    throw new Error(payload.message || `${path} 请求失败（HTTP ${response.status}）`);
   }
   return payload;
 }
@@ -103,6 +164,59 @@ function signalCluster(signal) {
   return signal.tags?.[0] || signal.source?.provider || signal.source?.type || "rss";
 }
 
+function tagLabel(tag) {
+  return TAG_LABELS[tag] || tag || "未分类";
+}
+
+function sourceDisplayName(source = {}) {
+  source = source || {};
+  return SOURCE_NAME_LABELS[source.id] || SOURCE_NAME_LABELS[source.source_id] || source.name || source.provider || "RSS 来源";
+}
+
+function sourceTypeLabel(type) {
+  return SOURCE_TYPE_LABELS[type] || type || "来源";
+}
+
+function stepLabel(step) {
+  return STEP_LABELS[step] || step || "刷新";
+}
+
+function friendlyMessage(message) {
+  if (message === "No successful signals have been generated yet.") return "还没有生成成功的信号。";
+  if (message === "No store runs have been recorded yet.") return "还没有记录成功的抓取批次。";
+  return message || "";
+}
+
+function cleanDisplayText(value) {
+  return String(value || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncateDisplayText(value, maxLength) {
+  const text = cleanDisplayText(value);
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
+}
+
+function firstSentence(value) {
+  const text = cleanDisplayText(value);
+  if (!text) return "";
+  return text.split(/(?<=[。！？.!?])\s+/)[0] || text;
+}
+
+function removeSourceIntro(value) {
+  return cleanDisplayText(value)
+    .replace(/^(据|来自).{1,18}(报道|消息|称)[，,:：]\s*/u, "")
+    .replace(/^(IT之家|新华社|红星新闻|环球网|新华网|中国新闻周刊)[\s\d月日号]*(消息|报道)?[，,:：]\s*/u, "")
+    .replace(/^[【\[][^】\]]{1,24}[】\]]\s*/u, "");
+}
+
 function visibleSignals() {
   if (state.cluster === "全部") return signals();
   return signals().filter((signal) => (signal.tags || []).includes(state.cluster));
@@ -124,7 +238,7 @@ function syncSelectedSignal() {
 
 function statusText(status) {
   if (!status || status.status === "idle") return "读取最近一次成功信号。";
-  if (status.status === "running") return `正在刷新：${status.current_step || "refresh"}`;
+  if (status.status === "running") return `正在刷新：${stepLabel(status.current_step)}`;
   if (status.status === "failed" || status.status === "failed_stale_lock") return `刷新失败：${status.last_error || status.status}`;
   if (status.status === "succeeded_empty") return `刷新完成，但暂无可展示信号。${refreshSummaryText(status)}`;
   if (status.status === "succeeded") return `刷新完成。${refreshSummaryText(status)}`;
@@ -171,8 +285,9 @@ function render(refreshStatus = { status: "idle" }) {
   renderSourceFolders();
   renderExpandedFolder();
   renderDetail();
+  renderNewsPreview();
   document.getElementById("refresh-status").textContent = statusText(refreshStatus);
-  document.getElementById("generated-at").textContent = state.payload?.generated_at || state.payload?.message || "-";
+  document.getElementById("generated-at").textContent = state.payload?.generated_at || friendlyMessage(state.payload?.message) || "-";
   document.getElementById("input-run-id").textContent = state.payload?.input_run_id || "-";
 }
 
@@ -193,7 +308,7 @@ function renderFilters() {
   const filters = clusters();
   document.getElementById("filters").innerHTML = filters.map((cluster) => `
     <button class="filter${cluster === state.cluster ? " is-active" : ""}" type="button" data-cluster="${esc(cluster)}">
-      ${esc(cluster)}
+      ${esc(tagLabel(cluster))}
     </button>
   `).join("");
   document.querySelectorAll("[data-cluster]").forEach((button) => {
@@ -208,7 +323,7 @@ function renderFilters() {
 function renderSignals() {
   const container = document.getElementById("signal-grid");
   if (state.payload?.status === "empty") {
-    container.innerHTML = `<div class="sources-empty">${esc(state.payload.message)}</div>`;
+    container.innerHTML = `<div class="sources-empty">${esc(friendlyMessage(state.payload.message))}</div>`;
     return;
   }
   if (state.payload?.status === "error") {
@@ -222,31 +337,127 @@ function renderSignals() {
     return;
   }
 
-  container.innerHTML = items.map((signal) => {
-    const score = scorePercent(signal.total_score);
-    const active = selectedSignal()?.id === signal.id;
-    return `
-      <button class="signal${active ? " is-active" : ""}" type="button" data-signal="${esc(signal.id)}">
-        <div class="signal-top"><span>${esc(signal.source?.name || signal.source?.provider || "RSS")}</span><span>${esc(signalCluster(signal))}</span></div>
-        <h3 class="signal-title">${esc(signal.title)}</h3>
-        <p class="signal-summary">${esc(signal.what_happened || signal.why_relevant || "")}</p>
-        <div class="signal-bottom">
-          <div class="score-rail">
-            <span class="score-label">Signal score / 100</span>
-            <span class="score-line"><i style="--score:${score}%; --score-color:${scoreColor(score)}"></i></span>
-          </div>
-          <span class="score-number">${score}</span>
-        </div>
-      </button>
-    `;
-  }).join("");
+  const sections = recommendationSections(items);
+  if (state.previewId && !items.some((signal) => signal.id === state.previewId)) {
+    state.previewId = "";
+    state.previewSection = "";
+    state.previewRect = null;
+  }
 
-  document.querySelectorAll("[data-signal]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.selectedId = button.dataset.signal;
+  container.innerHTML = sections.map((section) => `
+    <section class="signal-section">
+      <article class="signal-section-card" data-section="${esc(section.key)}" style="--section-color:${esc(section.color)}">
+        <header class="signal-section-head">
+          <div>
+            <h3>${esc(section.sectionTitle || section.label)}</h3>
+            <p>${esc(section.description)}</p>
+          </div>
+          <span>${section.items.length} 条</span>
+        </header>
+        <div class="section-preview-list">
+          ${section.items.map((signal) => renderSectionPreview(signal, section.key)).join("")}
+        </div>
+        <div class="section-card-foot">
+          <span>悬停滚动浏览</span>
+          <b>${section.items.length}</b>
+        </div>
+      </article>
+    </section>
+  `).join("");
+
+  document.querySelectorAll("[data-preview-signal]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      const nextPreviewId = button.dataset.previewSignal;
+      if (state.previewId === nextPreviewId) {
+        state.previewId = "";
+        state.previewSection = "";
+        state.previewRect = null;
+        render();
+        return;
+      }
+
+      const rect = event.currentTarget.getBoundingClientRect();
+      state.previewId = nextPreviewId;
+      state.previewRect = {
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height
+      };
+      state.previewSection = button.dataset.previewSection || "";
+      state.selectedId = button.dataset.previewSignal;
       render();
     });
   });
+}
+
+function renderSectionPreview(signal, sectionKey) {
+  const active = state.previewId === signal.id && state.previewSection === sectionKey;
+  return `
+    <div class="section-preview-wrap">
+      <button class="section-preview-item${active ? " is-active" : ""}" type="button" data-preview-signal="${esc(signal.id)}" data-preview-section="${esc(sectionKey)}">
+        <div class="section-preview-meta">
+          <span>${esc(sourceDisplayName(signal.source))}</span>
+          <span>${esc(tagLabel(signalCluster(signal)))}</span>
+        </div>
+        <h4>${esc(displayTitle(signal))}</h4>
+        <p>${esc(displaySummary(signal))}</p>
+      </button>
+    </div>
+  `;
+}
+
+function renderNewsPreview() {
+  const layer = document.getElementById("news-preview-layer");
+  if (!layer) return;
+  const signal = signals().find((candidate) => candidate.id === state.previewId);
+  if (!signal || !state.previewRect) {
+    layer.innerHTML = "";
+    layer.hidden = true;
+    return;
+  }
+
+  const width = Math.min(390, Math.max(320, window.innerWidth - 24));
+  const gap = 12;
+  const canOpenRight = state.previewRect.right + gap + width <= window.innerWidth - 12;
+  const left = canOpenRight
+    ? state.previewRect.right + gap
+    : Math.max(12, state.previewRect.left - width - gap);
+  const top = Math.max(12, Math.min(state.previewRect.top - 8, window.innerHeight - 430));
+
+  layer.hidden = false;
+  layer.innerHTML = `
+    <aside class="signal-popover" role="dialog" aria-label="新闻预览" style="--popover-left:${left}px; --popover-top:${top}px; --popover-width:${width}px">
+      <div class="popover-kicker">${esc(sourceDisplayName(signal.source))} / ${esc(tagLabel(signalCluster(signal)))}</div>
+      <h4>${esc(displayTitle(signal))}</h4>
+      <p>${esc(displaySummary(signal))}</p>
+      ${renderInterestChips(signal)}
+      ${renderScoreBars(signal, "is-popover")}
+      <div class="popover-actions">
+        <span>${esc((signal.recommended_questions || [])[0] || "可继续追踪这条信号。")}</span>
+        ${signal.link ? `<a href="${esc(signal.link)}" target="_blank" rel="noreferrer" onclick="event.stopPropagation()">原文</a>` : ""}
+      </div>
+    </aside>
+  `;
+}
+
+function recommendationSections(items) {
+  return SCORE_DIMENSIONS.map((dimension) => {
+    const ranked = [...items]
+      .sort((a, b) => {
+        const aMetric = metricForSignal(a, dimension.key);
+        const bMetric = metricForSignal(b, dimension.key);
+        return bMetric.percent - aMetric.percent || Number(b.total_score || 0) - Number(a.total_score || 0);
+      })
+      .slice(0, SECTION_LIMIT);
+
+    return {
+      ...dimension,
+      items: ranked
+    };
+  }).filter((section) => section.items.length);
 }
 
 function scorePercent(score) {
@@ -255,10 +466,183 @@ function scorePercent(score) {
   return Math.max(0, Math.min(100, Math.round(percent)));
 }
 
-function scoreColor(score) {
-  if (score >= 80) return "var(--green)";
-  if (score >= 60) return "var(--amber)";
-  return "var(--rust)";
+function clampScore(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(0, Math.min(100, Math.round(number)));
+}
+
+function toFivePoint(score) {
+  const value = Number(score);
+  const normalized = value <= 5 ? value : value / 20;
+  return Math.max(0, Math.min(5, Math.round(normalized * 10) / 10));
+}
+
+function formatFivePoint(score) {
+  return Number.isInteger(score) ? String(score) : score.toFixed(1);
+}
+
+function profileTermLabel(term) {
+  const raw = String(term || "").trim();
+  const normalized = raw.toLowerCase();
+  return PROFILE_TERM_LABELS[normalized] || TAG_LABELS[normalized] || raw;
+}
+
+function displayTitle(signal) {
+  if (signal.display_title) return localizeDisplayTitle(signal.display_title);
+
+  const topic = interestPoints(signal)[0] || tagLabel(signalCluster(signal));
+  const rawTitle = cleanDisplayText(signal.title);
+  let candidate = removeSourceIntro(firstSentence(signal.display_summary || signal.what_happened || signal.why_relevant));
+
+  if (!candidate || candidate === rawTitle) {
+    candidate = removeSourceIntro(firstSentence(signal.what_happened || signal.why_relevant || rawTitle));
+  }
+  if (!candidate) return truncateDisplayText(rawTitle, 38);
+  if (topic && !candidate.startsWith(`${topic}：`)) {
+    return truncateDisplayText(`${topic}：${candidate}`, 38);
+  }
+  return truncateDisplayText(candidate, 38);
+}
+
+function localizeDisplayTitle(value) {
+  return cleanDisplayText(value)
+    .replace(/^AI Agent：/u, "AI 智能体：")
+    .replace(/^AI Coding：/u, "AI 编程：")
+    .replace(/^Open Source：/u, "开源：")
+    .replace(/^Social Signal：/u, "社交信号：")
+    .replace(/^Context：/u, "上下文：")
+    .replace(/^MCP：/u, "MCP 协议：");
+}
+
+function displaySummary(signal) {
+  if (signal.display_summary) return signal.display_summary;
+
+  const summary = removeSourceIntro(signal.what_happened || signal.why_relevant || signal.title);
+  return truncateDisplayText(summary, 150);
+}
+
+function interestPoints(signal) {
+  const points = [];
+  (signal.matched_keywords || []).forEach((match) => {
+    points.push(tagLabel(match.tag) || match.label);
+  });
+  (signal.matched_profile_terms || []).forEach((term) => {
+    points.push(profileTermLabel(term));
+  });
+  if (!points.length) {
+    points.push(tagLabel(signalCluster(signal)));
+  }
+
+  const seen = new Set();
+  return points
+    .filter(Boolean)
+    .map((point) => String(point).trim())
+    .filter((point) => {
+      const key = point.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 4);
+}
+
+function renderInterestChips(signal) {
+  const points = interestPoints(signal);
+  return `
+    <div class="interest-row" aria-label="相关兴趣点">
+      <span class="interest-kicker">相关</span>
+      ${points.map((point) => `<span class="interest-chip">${esc(point)}</span>`).join("")}
+    </div>
+  `;
+}
+
+function freshnessScore(signal) {
+  const rawDate = signal.published_at || signal.fetched_at || state.payload?.generated_at;
+  const timestamp = Date.parse(rawDate || "");
+  if (!Number.isFinite(timestamp)) return 50;
+
+  const hoursOld = Math.max(0, (Date.now() - timestamp) / 36e5);
+  if (hoursOld <= 6) return 100;
+  if (hoursOld <= 24) return 92;
+  if (hoursOld <= 72) return 78;
+  if (hoursOld <= 168) return 62;
+  if (hoursOld <= 720) return 42;
+  return 24;
+}
+
+function sourcePriorityBonus(priority) {
+  if (priority === "high") return 8;
+  if (priority === "medium") return 4;
+  return 0;
+}
+
+function scoreBreakdown(signal) {
+  const profileHits = signal.matched_profile_terms?.length || 0;
+  const topicHits = signal.matched_keywords?.length || 0;
+  const sourceHits = signal.matched_source_tags?.length || 0;
+  const tagCount = signal.tags?.length || 0;
+  const negativeHits = signal.negative_matches?.length || 0;
+  const importance = scorePercent(signal.importance_score || signal.total_score || 0);
+  const relevance = scorePercent(signal.relevance_score || signal.total_score || 0);
+  const total = scorePercent(signal.total_score || 0);
+
+  const career = clampScore(
+    relevance
+      + sourcePriorityBonus(signal.source?.priority)
+      + Math.min(12, sourceHits * 3 + profileHits * 2)
+      - negativeHits * 6
+  );
+  const interest = clampScore(
+    Math.max(relevance * 0.55, total * 0.45)
+      + profileHits * 8
+      + topicHits * 10
+      + Math.min(8, tagCount * 2)
+      - negativeHits * 8
+  );
+  const freshness = freshnessScore(signal);
+  const profileOverlap = Math.min(82, profileHits * 18 + sourceHits * 8 + topicHits * 6);
+  const exploration = clampScore(
+    (100 - profileOverlap) * 0.42
+      + importance * 0.28
+      + freshness * 0.2
+      + Math.min(10, tagCount * 2)
+      - negativeHits * 8
+  );
+
+  return SCORE_DIMENSIONS.map((dimension) => ({
+    ...dimension,
+    percent: { career, interest, freshness, explore: exploration }[dimension.key],
+    value: toFivePoint({ career, interest, freshness, explore: exploration }[dimension.key])
+  }));
+}
+
+function metricForSignal(signal, key) {
+  return scoreBreakdown(signal).find((metric) => metric.key === key) || { percent: 0, value: 0 };
+}
+
+function renderScoreBars(signal, variant = "") {
+  const className = ["score-bars", variant].filter(Boolean).join(" ");
+  return `
+    <div class="${className}" aria-label="职业、兴趣、新鲜、探索 5 分制评分">
+      ${scoreBreakdown(signal).map((metric) => `
+        <div class="score-bar" title="${esc(metric.label)} ${formatFivePoint(metric.value)}/5">
+          <div class="score-bar-meta">
+            <span>${esc(metric.label)}</span>
+            <b>${formatFivePoint(metric.value)}</b>
+          </div>
+          <span class="score-track">
+            <i style="--score:${metric.percent}%; --score-color:${metric.color}"></i>
+          </span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function scoreBasisText(signal) {
+  const freshnessSource = signal.published_at ? "发布时间" : signal.fetched_at ? "抓取时间" : "本次生成时间";
+  return `职业参考后端相关性、来源优先级和画像命中；兴趣参考画像词、主题词与标签命中；新鲜根据${freshnessSource}距离当前时间估算；探索偏向新鲜、重要但与既有画像重合较少的内容。`;
 }
 
 function renderDetail() {
@@ -271,18 +655,22 @@ function renderDetail() {
 
   container.innerHTML = `
     <section class="selected-title">
-      <small>${esc(signalCluster(signal))} / ${esc(signal.source?.type || "rss")}</small>
-      <h3>${esc(signal.title)}</h3>
+      <small>${esc(tagLabel(signalCluster(signal)))} / ${esc(sourceTypeLabel(signal.source?.type || "rss"))}</small>
+      <h3>${esc(displayTitle(signal))}</h3>
+      <p>${esc(displaySummary(signal))}</p>
     </section>
-    <section class="detail-score">
-      <div><b>${scorePercent(signal.total_score)}</b><span>信号分 /100</span></div>
-      <div><b>${esc(signal.importance_score || "-")}</b><span>重要性</span></div>
-      <div><b>${esc(signal.relevance_score || "-")}</b><span>相关性</span></div>
+    <section class="detail-score-chart">
+      <header>
+        <h4>四维评分</h4>
+        <span>5 分制</span>
+      </header>
+      ${renderScoreBars(signal, "is-detail")}
+      <p class="score-note">${esc(scoreBasisText(signal))}</p>
     </section>
     <section class="trace">
-      <div class="trace-row"><time>${esc(state.payload?.generated_at || "-")}</time><span>抓取来源：${esc(signal.source?.name || "")}</span></div>
-      <div class="trace-row"><time>API</time><span>来自 /api/signals/latest 的最近一次成功 signals</span></div>
-      <div class="trace-row"><time>RUN</time><span>输入批次：${esc(state.payload?.input_run_id || "-")}</span></div>
+      <div class="trace-row"><time>${esc(state.payload?.generated_at || "-")}</time><span>抓取来源：${esc(sourceDisplayName(signal.source))}</span></div>
+      <div class="trace-row"><time>接口</time><span>来自 /api/signals/latest 的最近一次成功信号</span></div>
+      <div class="trace-row"><time>批次</time><span>输入批次：${esc(state.payload?.input_run_id || "-")}</span></div>
     </section>
     <section class="detail-section">
       <h4>为什么重要</h4>
@@ -302,10 +690,10 @@ function renderDetail() {
     </section>
     <section class="detail-section">
       <h4>分数口径</h4>
-      <p>信号分是把后端 1-5 规则分换算成 0-100 展示；重要性和相关性保留 1-5 原始分。</p>
+      <p>页面不再只显示单一信号分。柱状图把后端规则分、画像命中、主题命中、来源优先级、时间信息和探索价值拆成四个维度。</p>
     </section>
     <section class="tag-line">
-      ${(signal.tags || []).map((tag) => `<span>${esc(tag)}</span>`).join("")}
+      ${(signal.tags || []).map((tag) => `<span>${esc(tagLabel(tag))}</span>`).join("")}
     </section>
   `;
 }
@@ -364,7 +752,7 @@ function renderSourceFolders() {
               ${folderSources.slice(0, 6).map((source) => `
                 <div class="source-app${source.runnable ? "" : " is-muted"}" title="${esc(source.signal)}">
                   ${renderSourceLogo(source)}
-                  <div class="source-app-name">${esc(source.name)}</div>
+                  <div class="source-app-name">${esc(sourceDisplayName(source))}</div>
                 </div>
               `).join("")}
             </div>
@@ -427,8 +815,8 @@ function renderExpandedFolder() {
   document.getElementById("expanded-source-grid").innerHTML = sources.map((source) => `
     <article class="expanded-source${source.runnable ? "" : " is-muted"}">
       ${renderSourceLogo(source, "expanded-logo")}
-      <div class="expanded-source-name">${esc(source.name)}</div>
-      <div class="expanded-source-meta">${esc(source.type)} / ${esc(source.cadence)} / ${source.enabled ? "enabled" : "disabled"}</div>
+      <div class="expanded-source-name">${esc(sourceDisplayName(source))}</div>
+      <div class="expanded-source-meta">${esc(sourceTypeLabel(source.type))} / ${esc(source.cadence)} / ${source.enabled ? "已启用" : "已停用"}</div>
       <div class="source-control-row">
         <button
           class="source-control primary"
@@ -472,7 +860,7 @@ function toggleSourceConfigEditor() {
     editor.setSelectionRange(0, 0);
     document.getElementById("folder-status").textContent = `正在编辑 ${state.sourcePath}`;
   } else {
-    document.getElementById("folder-status").textContent = "刷新会读取 config/sources.yml 中 enabled=true 的 RSS 来源";
+    document.getElementById("folder-status").textContent = "刷新会读取 config/sources.yml 中已启用的 RSS 来源";
   }
 }
 
@@ -595,7 +983,21 @@ function bindControls() {
   document.getElementById("folder-overlay").addEventListener("click", (event) => {
     if (event.target.id === "folder-overlay") closeSourceFolder();
   });
+  document.addEventListener("click", (event) => {
+    if (!state.previewId) return;
+    if (event.target.closest("[data-preview-signal]") || event.target.closest("#news-preview-layer")) return;
+    state.previewId = "";
+    state.previewSection = "";
+    state.previewRect = null;
+    render();
+  });
   document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.previewId) {
+      state.previewId = "";
+      state.previewSection = "";
+      state.previewRect = null;
+      render();
+    }
     if (event.key === "Escape" && !document.getElementById("user-profile-modal").hidden) closeUserProfile();
     if (event.key === "Escape" && !document.getElementById("folder-overlay").hidden) closeSourceFolder();
   });
