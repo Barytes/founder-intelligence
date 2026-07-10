@@ -16,9 +16,9 @@ import yaml
 
 from agentic_core import AgenticCore
 from agentic_core.config import load_agentic_config
+from agentic_core.pipeline.runner import PipelineRunner
 from agentic_core.schemas import AgenticConfig, ProviderProfileConfig
 from web_workbench.dashboard_repository import DashboardRepository
-from web_workbench.pipeline_runner import PipelineRunner
 
 
 def _find_repo_root(start: Path) -> Path:
@@ -129,7 +129,12 @@ def _same_origin(request: Request) -> bool:
     )
 
 
-def ensure_rsshub(root: Path | str, *, run_command: Any | None = None) -> dict[str, Any]:
+def ensure_rsshub(
+    root: Path | str,
+    *,
+    force_recreate: bool = False,
+    run_command: Any | None = None,
+) -> dict[str, Any]:
     repo_root = Path(root).resolve()
     compose_file = repo_root / "config/docker-compose.yml"
     if not compose_file.exists():
@@ -139,7 +144,10 @@ def ensure_rsshub(root: Path | str, *, run_command: Any | None = None) -> dict[s
     if not env_file.exists():
         env_file.write_text("", encoding="utf-8")
 
-    command = ["docker", "compose", "-f", str(compose_file), "up", "-d", "rsshub"]
+    command = ["docker", "compose", "-f", str(compose_file), "up", "-d"]
+    if force_recreate:
+        command.append("--force-recreate")
+    command.append("rsshub")
     runner = run_command or (
         lambda argv: subprocess.run(
             argv,
@@ -613,7 +621,13 @@ async def update_env_settings(request: Request):
     _write_env_updates(ENV_PATH, {"GITHUB_ACCESS_TOKEN": github_token})
     os.environ["GITHUB_ACCESS_TOKEN"] = github_token
     load_dotenv(ENV_PATH, override=True)
-    return {"status": "saved", **_env_settings_payload(), "errors": []}
+    rsshub = ensure_rsshub(app.state.dashboard_root, force_recreate=True)
+    return {
+        "status": "saved",
+        **_env_settings_payload(),
+        "rsshub": rsshub,
+        "errors": [],
+    }
 
 
 @app.post("/api/agent/provider-settings")

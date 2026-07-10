@@ -95,7 +95,7 @@ The Python runner preserves the required refresh semantics for the Agent tool pa
 - failed refresh preserves the previous successful `data/signals/latest.json`;
 - module CLI emits a JSON status payload.
 
-The Web app and Agent tool path now both live in the Python codebase, but they use separate runner entry points: the Web app uses `web_workbench.pipeline_runner.PipelineRunner`, while the Agent tool uses `agentic_core.pipeline.runner.PipelineRunner`.
+The Web app and Agent tool path both use `agentic_core.pipeline.runner.PipelineRunner`; the FastAPI route and Agent tool differ only in their caller boundary.
 
 ## Verification
 

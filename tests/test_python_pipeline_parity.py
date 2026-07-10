@@ -6,12 +6,8 @@ import yaml
 
 from agentic_core.pipeline import build_signals as py_build_signals
 from agentic_core.pipeline import ingest_adapter_output as py_ingest
-from agentic_core.pipeline import store_canonical_jsonl as py_store
 from agentic_core.pipeline.fetch_rss import parse_feed
 from agentic_core.pipeline.runner import PipelineRunner
-
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 def write_json(path: Path, payload: dict):
@@ -26,10 +22,6 @@ def write_yaml(path: Path, payload: dict):
 
 def read_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def run_ruby(script: str, *args: str, cwd: Path):
-    subprocess.run(["ruby", str(ROOT / script), *args], cwd=cwd, check=True, capture_output=True, text=True)
 
 
 def sample_sources():
@@ -150,91 +142,26 @@ def sample_signal_rules():
     }
 
 
-def normalize_dynamic(payload: dict, *keys: str):
-    result = json.loads(json.dumps(payload))
-    for key in keys:
-        result.pop(key, None)
-    return result
-
-
-def test_python_ingest_matches_ruby_for_fixture(tmp_path):
-    write_json(tmp_path / "adapter.json", sample_adapter_output())
-    write_yaml(tmp_path / "sources.yml", sample_sources())
-    write_yaml(tmp_path / "ingestion.yml", sample_ingestion_rules())
-    run_ruby(
-        "src/ingest_adapter_output.rb",
-        "--input",
-        "adapter.json",
-        "--sources",
-        "sources.yml",
-        "--rules",
-        "ingestion.yml",
-        "--output",
-        "ruby-canonical.json",
-        cwd=tmp_path,
-    )
-
-    python_output = py_ingest.ingest(
+def test_python_ingest_normalizes_and_deduplicates_fixture():
+    output = py_ingest.ingest(
         sample_adapter_output(),
         sample_sources(),
         sample_ingestion_rules(),
         now_iso="2026-07-09T09:00:00+08:00",
     )
-    ruby_output = read_json(tmp_path / "ruby-canonical.json")
+    assert output["summary"] == {"input_results": 1, "canonical_items": 1, "dropped_items": 1}
+    assert output["items"][0]["normalized_link"] == "https://example.com/a?keep=1"
+    assert output["dropped_items"][0]["reason"] == "duplicate"
 
-    assert normalize_dynamic(python_output, "ingested_at") == normalize_dynamic(ruby_output, "ingested_at")
 
-
-def test_python_store_matches_ruby_for_fixture(tmp_path):
+def test_python_build_signals_preserves_dashboard_display_contract():
     canonical = py_ingest.ingest(sample_adapter_output(), sample_sources(), sample_ingestion_rules(), now_iso="2026-07-09T09:00:00+08:00")
-    write_json(tmp_path / "canonical.json", canonical)
-    run_ruby(
-        "src/store_canonical_jsonl.rb",
-        "--input",
-        "canonical.json",
-        "--store-dir",
-        "ruby-store",
-        "--date",
-        "2026-07-09",
-        cwd=tmp_path,
-    )
+    output = py_build_signals.build_output(canonical, sample_profile(), sample_signal_rules(), generated_at="2026-07-09T09:30:00+08:00")
+    signal = output["signals"][0]
 
-    python_summary = py_store.store(canonical, {"store_dir": str(tmp_path / "python-store"), "date": "2026-07-09"}, stored_at="2026-07-09T09:30:00+08:00")
-    ruby_run = json.loads((tmp_path / "ruby-store/runs/2026-07-09.jsonl").read_text(encoding="utf-8").splitlines()[-1])
-    python_run = json.loads((tmp_path / "python-store/runs/2026-07-09.jsonl").read_text(encoding="utf-8").splitlines()[-1])
-
-    assert python_summary["input_items"] == ruby_run["input_items"]
-    assert python_summary["appended_items"] == ruby_run["appended_items"]
-    assert python_summary["skipped_duplicates"] == ruby_run["skipped_duplicates"]
-    assert normalize_dynamic(python_run, "stored_at", "items_path", "runs_path") == normalize_dynamic(ruby_run, "stored_at", "items_path", "runs_path")
-
-
-def test_python_build_signals_matches_ruby_for_fixture(tmp_path):
-    canonical = py_ingest.ingest(sample_adapter_output(), sample_sources(), sample_ingestion_rules(), now_iso="2026-07-09T09:00:00+08:00")
-    write_json(tmp_path / "canonical.json", canonical)
-    write_yaml(tmp_path / "profile.yml", sample_profile())
-    write_yaml(tmp_path / "rules.yml", sample_signal_rules())
-    run_ruby(
-        "src/build_signals.rb",
-        "--input",
-        "canonical.json",
-        "--profile",
-        "profile.yml",
-        "--rules",
-        "rules.yml",
-        "--output",
-        "ruby-signals.json",
-        "--markdown",
-        "ruby.md",
-        "--html",
-        "ruby.html",
-        cwd=tmp_path,
-    )
-
-    python_output = py_build_signals.build_output(canonical, sample_profile(), sample_signal_rules(), generated_at="2026-07-09T09:30:00+08:00")
-    ruby_output = read_json(tmp_path / "ruby-signals.json")
-
-    assert normalize_dynamic(python_output, "generated_at") == normalize_dynamic(ruby_output, "generated_at")
+    assert signal["importance_score"] == 5
+    assert signal["display_title"] == "AI 智能体：Agent workflow and context 记忆 upda…"
+    assert signal["display_summary"] == "这条内容与「AI 智能体」相关：Agent workflow and context 记忆 update."
 
 
 def test_python_fetch_parser_handles_rss_and_atom():
@@ -273,6 +200,42 @@ def test_python_runner_succeeded_empty_without_rss_sources(tmp_path):
     assert read_json(tmp_path / "data/app/refresh-status.json")["status"] == "succeeded_empty"
 
 
+def test_python_runner_reports_failed_sources_without_failing_other_sources(monkeypatch, tmp_path):
+    write_yaml(tmp_path / "config/sources.yml", sample_sources())
+    write_yaml(tmp_path / "config/ingestion-rules.yml", sample_ingestion_rules())
+    write_yaml(tmp_path / "config/user-profile.yml", sample_profile())
+    write_yaml(tmp_path / "config/signal-rules.yml", sample_signal_rules())
+    adapter_output = sample_adapter_output()
+    adapter_output["results"].append(
+        {
+            "source_id": "github-trending-daily",
+            "source_type": "rss",
+            "provider": "github",
+            "fetched_at": "2026-07-09T08:00:00+08:00",
+            "status": "failed",
+            "items": [],
+            "errors": [
+                {
+                    "code": "rss_url_unreachable",
+                    "message": "HTTP Error 503; GITHUB_ACCESS_TOKEN=secret-value",
+                    "retryable": True,
+                    "item_scope": "source",
+                }
+            ],
+        }
+    )
+    monkeypatch.setattr("agentic_core.pipeline.runner.fetch_rss.fetch", lambda *_args: adapter_output)
+
+    status = PipelineRunner(root=tmp_path, timeout_seconds=5).refresh()
+
+    assert status["status"] == "succeeded_partial"
+    assert status["adapter_summary"]["ok_sources"] == 1
+    assert status["adapter_summary"]["failed_sources"] == 1
+    failure = status["adapter_summary"]["source_results"][1]
+    assert failure["source_id"] == "github-trending-daily"
+    assert failure["errors"][0]["message"] == "HTTP Error 503; [REDACTED]"
+
+
 def test_python_runner_failure_preserves_previous_successful_signals(tmp_path):
     write_json(tmp_path / "data/signals/latest.json", {"input_run_id": "old", "signals": []})
 
@@ -298,8 +261,8 @@ def test_python_runner_module_cli_outputs_refresh_status(tmp_path):
             "--timeout-seconds",
             "5",
         ],
-        cwd=ROOT,
-        env={"PYTHONPATH": str(ROOT / "src/agentic-core")},
+        cwd=Path(__file__).resolve().parents[1],
+        env={"PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src/agentic-core")},
         check=True,
         capture_output=True,
         text=True,

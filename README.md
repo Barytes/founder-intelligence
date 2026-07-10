@@ -8,7 +8,7 @@ serves the signal console, Agentic Core workbench, and settings page.
 Requirements:
 
 - Python 3.11+ and [uv](https://docs.astral.sh/uv/)
-- Docker, Docker Compose, and Ruby are needed when running an RSS refresh
+- Docker and Docker Compose are needed when running an RSS refresh
 
 ```bash
 PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 4567
@@ -53,10 +53,10 @@ The implemented refresh path is RSS-only:
 4. Build user-matched intelligence signals and a daily dashboard.
 
 Use the refresh action in the signal console for normal operation. The FastAPI
-service runs this fixed Ruby pipeline internally; it does not enable the MCP,
+service runs this fixed Python pipeline internally; it does not enable the MCP,
 API, HTML, or file source templates.
 
-The latest successful signal payload is `data/signals/latest.json`. The Ruby
+The latest successful signal payload is `data/signals/latest.json`. The Python
 builder also produces `data/dashboard/latest.md` and
 `data/dashboard/generated-latest.html`; these are generated reference artifacts,
 not the Web app homepage.
@@ -65,10 +65,7 @@ For pipeline-only diagnosis, the equivalent commands are:
 
 ```bash
 docker compose -f config/docker-compose.yml up -d rsshub
-ruby src/fetch_rss.rb --output data/adapter-output/rss-fetch-latest.json
-ruby src/ingest_adapter_output.rb --input data/adapter-output/rss-fetch-latest.json --output data/canonical-items/latest.json
-ruby src/store_canonical_jsonl.rb --input data/canonical-items/latest.json --store-dir data/store
-ruby src/build_signals.rb --input data/canonical-items/latest.json --profile config/user-profile.yml --rules config/signal-rules.yml
+PYTHONPATH=src/agentic-core uv run python -m agentic_core.pipeline.runner --root .
 ```
 
 ## MVP Scope

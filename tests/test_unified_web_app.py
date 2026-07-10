@@ -128,6 +128,46 @@ def test_ensure_rsshub_invokes_docker_compose_when_enabled(tmp_path):
     assert calls == [["docker", "compose", "-f", str(compose_file), "up", "-d", "rsshub"]]
 
 
+def test_ensure_rsshub_can_force_recreate(tmp_path):
+    compose_file = tmp_path / "config/docker-compose.yml"
+    compose_file.parent.mkdir(parents=True)
+    compose_file.write_text("services:\n  rsshub:\n    image: diygod/rsshub\n", encoding="utf-8")
+    calls = []
+
+    result = ensure_rsshub(tmp_path, force_recreate=True, run_command=lambda argv: calls.append(argv))
+
+    expected = ["docker", "compose", "-f", str(compose_file), "up", "-d", "--force-recreate", "rsshub"]
+    assert result == {"status": "started", "command": expected}
+    assert calls == [expected]
+
+
+def test_updating_github_token_recreates_rsshub(monkeypatch, tmp_path):
+    starts = []
+
+    def fake_ensure_rsshub(root, *, force_recreate=False, run_command=None):
+        starts.append((root, force_recreate))
+        return {"status": "started"}
+
+    monkeypatch.setattr("web_workbench.app.ensure_rsshub", fake_ensure_rsshub)
+    monkeypatch.setattr("web_workbench.app.ENV_PATH", tmp_path / ".env")
+    write_repo_fixture(tmp_path)
+    client = TestClient(
+        create_app(repo_root=tmp_path, runner=FakeRunner(), auto_start_rsshub=False),
+        base_url=ORIGIN,
+    )
+
+    response = client.put(
+        "/api/settings/env",
+        headers={"origin": ORIGIN},
+        json={"github_token": "token-for-test"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["rsshub"] == {"status": "started"}
+    assert starts == [(tmp_path, True)]
+    assert (tmp_path / ".env").read_text(encoding="utf-8") == "GITHUB_ACCESS_TOKEN=token-for-test\n"
+
+
 def test_workbench_auto_starts_rsshub_by_default(monkeypatch, tmp_path):
     starts = []
 

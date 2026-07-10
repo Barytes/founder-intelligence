@@ -4,7 +4,7 @@ The local storage layer writes canonical items to append-only JSONL files.
 
 Current implementation:
 
-- `src/store_canonical_jsonl.rb`
+- `src/agentic-core/agentic_core/pipeline/store_canonical_jsonl.py`
 
 Input:
 
@@ -29,7 +29,5 @@ This is not a database. It is a stable local handoff format before introducing a
 Example:
 
 ```bash
-ruby src/store_canonical_jsonl.rb \
-  --input data/canonical-items/latest.json \
-  --store-dir data/store
+PYTHONPATH=src/agentic-core uv run python -m agentic_core.pipeline.runner --root .
 ```

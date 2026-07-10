@@ -9,6 +9,19 @@ from typing import Any
 import yaml
 
 
+DISPLAY_LABELS = {
+    "ai-agent": "AI 智能体", "ai-coding": "AI 编程", "china-market": "中国市场",
+    "context": "上下文", "creator-economy": "创作者经济", "developer-tools": "开发者工具",
+    "github": "GitHub", "long-form": "长内容", "mcp": "MCP 协议",
+    "meeting-intelligence": "会议智能", "investment-research": "投资研究",
+    "open-source": "开源", "public-opinion": "公众讨论", "social-signal": "社交信号",
+    "startup-signals": "创业信号", "trending": "趋势热点", "video": "视频内容",
+    "AI Agent": "AI 智能体", "AI Coding": "AI 编程", "Context": "上下文",
+    "Meeting Intelligence": "会议智能", "Investment Research": "投资研究",
+    "Social Signal": "社交信号", "Open Source": "开源",
+}
+
+
 def present(value: Any) -> bool:
     return value is not None and str(value).strip() != ""
 
@@ -173,6 +186,171 @@ def extract_sentences(value: Any, max_sentences: int) -> list[str]:
     return [s.strip() for s in sentences if s.strip()][:max_sentences]
 
 
+def truncate_display_text(value: Any, max_chars: int) -> str:
+    text = clean_text(value)
+    return text if len(text) <= max_chars else f"{text[: max_chars - 1].strip()}…"
+
+
+def remove_source_prefix(value: Any) -> str:
+    text = clean_text(value)
+    text = re.sub(r"^(?:据|来自).{1,18}(?:报道|消息|称)[，,:：]\s*", "", text)
+    text = re.sub(r"^(?:IT之家|新华社|红星新闻|环球网|新华网|中国新闻周刊)[\s\d月日号]*(?:消息|报道)?[，,:：]\s*", "", text)
+    return re.sub(r"^[【\[][^】\]]{1,24}[】\]]\s*", "", text)
+
+
+def display_label(value: Any) -> str:
+    text = clean_text(value)
+    return DISPLAY_LABELS.get(text) or DISPLAY_LABELS.get(text.replace("_", "-").lower()) or text
+
+
+def github_item(item: dict[str, Any]) -> bool:
+    return clean_text(item.get("provider")) == "github" or "github" in clean_text(item.get("source_id"))
+
+
+def repository_short_name(item: dict[str, Any]) -> str:
+    title = clean_text(item.get("title"))
+    if "/" in title:
+        return title.split("/", 1)[1]
+    match = re.search(r"github\.com/[^/]+/([^/?#]+)", clean_text(item.get("normalized_link") or item.get("link")), re.I)
+    return match.group(1) if match else ""
+
+
+def without_github_metrics(value: Any) -> str:
+    return re.sub(r"\s*Language:\s*.+?(?:\s+Stars:\s*[\d,]+)?(?:\s+Forks:\s*[\d,]+)?\s*$", "", remove_source_prefix(value), flags=re.I).strip()
+
+
+def github_metric(value: Any, name: str) -> str:
+    match = re.search(rf"\b{re.escape(name)}:\s*([^ ]+)", clean_text(value), re.I)
+    return match.group(1) if match else ""
+
+
+def format_count(value: Any) -> str:
+    number = int(re.sub(r"\D", "", clean_text(value)) or 0)
+    if not number:
+        return ""
+    return f"{number / 10_000:.1f} 万" if number >= 10_000 else f"{number:,}"
+
+
+def github_metrics_sentence(value: Any) -> str:
+    language = github_metric(value, "Language")
+    stars = format_count(github_metric(value, "Stars"))
+    forks = format_count(github_metric(value, "Forks"))
+    parts = []
+    if language:
+        parts.append(f"主要语言 {language}")
+    if stars:
+        parts.append(f"约 {stars}星标" if "万" in stars else f"约 {stars} 星标")
+    if forks:
+        parts.append(f"{forks}分叉" if "万" in forks else f"{forks} 分叉")
+    return "，".join(parts)
+
+
+def localize_source_list(value: Any) -> str:
+    return re.sub(r",\s*and the web$", " 和网页", clean_text(value), flags=re.I).replace(",", "、")
+
+
+def rewrite_known_english_sentence(value: Any) -> str | None:
+    text = re.sub(r"^π\s*", "", clean_text(value))
+    patterns = [
+        (r"^(.+?) delivers fully local long-term memory for AI Agents via a (\d+)-tier progressive pipeline, with zero external API dependencies\.?$", lambda m: f"{m[1]} 提供全本地 AI 智能体长期记忆，采用 {m[2]} 层渐进式流程且无外部 API 依赖"),
+        (r"^Production-grade engineering skills for AI coding agents\.?$", lambda m: "面向 AI 编程智能体的生产级工程技能库"),
+        (r"^AI agent skill that researches any topic across (.+?) - then synthesizes a grounded summary\.?$", lambda m: f"可在 {localize_source_list(m[1])} 等渠道调研任意主题并生成有依据摘要的 AI 智能体技能"),
+        (r"^Instant, Concurrent, Secure & Lightweight Sandbox for AI Agents\.?$", lambda m: "面向 AI 智能体的即时、并发、安全、轻量沙箱"),
+        (r"^Extracted system prompts from (.+)$", lambda m: f"整理来自 {m[1]} 的系统提示词"),
+        (r"^(.+?) is the first and best Office suite purpose-built for AI agents to read, edit, and automate Word, Excel, and PowerPoint files\.?.*$", lambda m: f"{m[1]} 面向 AI 智能体读取、编辑和自动化 Word、Excel、PowerPoint 文件"),
+        (r"^An agentic skills framework & software development methodology that works\.?$", lambda m: "可落地的智能体技能框架与软件开发方法论"),
+        (r"^This is MCP server for Claude that gives it terminal control, file system search and diff file editing capabilities\.?$", lambda m: "为 Claude 提供终端控制、文件搜索和 diff 编辑能力的 MCP 服务器"),
+        (r"^A Patch for GIMP 3\+ for Photoshop Users\.?$", lambda m: "面向 Photoshop 用户的 GIMP 3+ 适配补丁"),
+        (r"^(.+?) turns commodity WiFi signals into real-time spatial intelligence, vital sign monitoring, and presence detection\s*[—-]\s*all without a single pixel of video\.?$", lambda m: f"{m[1]} 将普通 WiFi 信号转为实时空间智能、生命体征监测和存在检测，且无需视频画面"),
+    ]
+    for pattern, formatter in patterns:
+        match = re.match(pattern, text, re.I)
+        if match:
+            return formatter(match)
+    return None
+
+
+def translate_common_tech_phrases(value: Any) -> str:
+    text = clean_text(value)
+    replacements = [
+        (r"\bAI coding agents?\b", "AI 编程智能体"), (r"\bAI agents?\b", "AI 智能体"),
+        (r"\bcoding agents?\b", "编程智能体"), (r"\bagentic skills?\b", "智能体技能"),
+        (r"\bagentic\b", "智能体化"), (r"\bdeveloper tools?\b", "开发者工具"),
+        (r"\blong-term memory\b", "长期记忆"), (r"\bmemory\b", "记忆"),
+        (r"\bworkflow automation\b", "工作流自动化"), (r"\bopen source\b", "开源"),
+        (r"\bself-hosted\b", "自托管"), (r"\bsecure\b", "安全"), (r"\blightweight\b", "轻量"),
+        (r"\bsandbox\b", "沙箱"), (r"\bsystem prompts?\b", "系统提示词"),
+        (r"\bfile system search\b", "文件系统搜索"), (r"\bterminal control\b", "终端控制"),
+        (r"\bdiff file editing\b", "diff 文件编辑"),
+    ]
+    for pattern, replacement in replacements:
+        text = re.sub(pattern, replacement, text, flags=re.I)
+    return text
+
+
+def special_chinese_display_summary(value: Any) -> str | None:
+    return "围绕“300 行代码写 Cursor”的观点引发讨论，信号点在 AI 编程工具降低门槛后，开发者能力标准正在被重新讨论。" if re.search(r"300\s*行.*Cursor", clean_text(value), re.I) else None
+
+
+def display_core_summary(item: dict[str, Any]) -> str:
+    source = item.get("summary") if present(item.get("summary")) else item.get("content") or item.get("title")
+    special = special_chinese_display_summary(source)
+    if special:
+        return special
+    core = without_github_metrics(source)
+    return rewrite_known_english_sentence(core) or rewrite_known_english_sentence((extract_sentences(core, 1) or [item.get("title", "")])[0]) or translate_common_tech_phrases((extract_sentences(core, 1) or [item.get("title", "")])[0])
+
+
+def trim_subject_from_core(core: str, subject: str) -> str:
+    for candidate in {subject, subject.replace("-", " ").replace("_", " ")} - {""}:
+        core = re.sub(rf"^{re.escape(candidate)}\s*", "", core, flags=re.I)
+    return core
+
+
+def title_phrase_from_summary(summary: str) -> str:
+    phrases = [("长期记忆", "主打全本地长期记忆"), ("生产级工程技能", "提供生产级工程技能库"), ("调研任意主题", "跨平台调研并合成摘要"), ("轻量沙箱", "提供轻量安全沙箱"), ("系统提示词", "整理主流 AI 系统提示词"), ("Office", "让智能体自动处理 Office 文件"), ("软件开发方法论", "提出智能体技能开发方法论"), ("MCP 服务器", "给 Claude 增加终端与文件能力"), ("GIMP", "贴近 Photoshop 用户的 GIMP 工作流"), ("WiFi", "用 WiFi 做空间与体征感知")]
+    for term, phrase in phrases:
+        if term in summary:
+            return phrase
+    if len(summary) <= 24:
+        return summary
+    return re.split(r"[，。；]", summary, maxsplit=1)[0]
+
+
+def display_topic(context: dict[str, Any]) -> str | None:
+    for key in ("matches", "profile_matches", "source_tag_matches"):
+        values = context.get(key) or []
+        if values:
+            value = values[0].get("tag") or values[0].get("label") if isinstance(values[0], dict) else values[0]
+            return display_label(value)
+    return None
+
+
+def display_title_for(item: dict[str, Any], context: dict[str, Any], rules: dict[str, Any]) -> str:
+    source = item.get("summary") if present(item.get("summary")) else item.get("content") or item.get("title")
+    subject = repository_short_name(item) if github_item(item) else ""
+    candidate = "开发者能力门槛讨论升温" if re.search(r"300\s*行.*Cursor", clean_text(source), re.I) else title_phrase_from_summary(display_core_summary(item))
+    if subject and subject not in candidate:
+        candidate = f"{subject} {candidate}"
+    topic = display_topic(context)
+    max_chars = int(rules.get("recommendation", {}).get("max_display_title_chars", 42))
+    candidate = truncate_display_text(candidate, max(max_chars - len(topic) - 1, 12) if topic else max_chars)
+    return truncate_display_text(f"{topic}：{candidate}", max_chars) if topic and candidate else candidate
+
+
+def display_summary_for(item: dict[str, Any], context: dict[str, Any], rules: dict[str, Any]) -> str:
+    subject = repository_short_name(item) if github_item(item) else ""
+    core = trim_subject_from_core(display_core_summary(item), subject)
+    summary = f"开源项目 {subject}：{core}" if subject else core
+    metrics = github_metrics_sentence(item.get("summary") if present(item.get("summary")) else item.get("content") or item.get("title"))
+    if metrics:
+        summary = f"{summary}；{metrics}"
+    topic = display_topic(context)
+    if topic and topic not in summary and not github_item(item):
+        summary = f"这条内容与「{topic}」相关：{summary}"
+    return truncate_display_text(summary, int(rules.get("recommendation", {}).get("max_display_summary_chars", 150)))
+
+
 def summary_for(item: dict[str, Any], rules: dict[str, Any]) -> str:
     source = item.get("summary") if present(item.get("summary")) else item.get("content")
     sentences = extract_sentences(source, rules.get("recommendation", {}).get("max_summary_sentences", 2))
@@ -227,6 +405,8 @@ def build_signal(item: dict[str, Any], profile: dict[str, Any], rules: dict[str,
     return {
         "id": item["id"],
         "title": item.get("title"),
+        "display_title": display_title_for(item, context, rules),
+        "display_summary": display_summary_for(item, context, rules),
         "source": {"id": item.get("source_id"), "name": item.get("source_name"), "provider": item.get("provider"), "type": item.get("source_type"), "priority": item.get("priority")},
         "link": item.get("normalized_link") or item.get("link"),
         "published_at": item.get("published_at"),
@@ -281,7 +461,7 @@ def build_output(canonical: dict[str, Any], profile: dict[str, Any], rules: dict
 def markdown_dashboard(output: dict[str, Any]) -> str:
     lines = ["# Founder Daily Intelligence - 信息聚合器", "", f"- 生成时间：{output['generated_at']}", f"- 输入批次：{output['input_run_id']}", f"- 推荐信号：{output['summary']['signals']}", ""]
     for index, signal in enumerate(output["signals"], 1):
-        lines.extend([f"## {index}. {signal['title']}", "", f"- 来源：{signal['source']['name']} / {signal['source']['provider']}", f"- 评分：重要性 {signal['importance_score']}/5，相关性 {signal['relevance_score']}/5，总分 {signal['total_score']}", f"- 发生了什么：{signal['what_happened']}", f"- 为什么重要：{signal['why_important']}", f"- 为什么与你有关：{signal['why_relevant']}", f"- 建议追问：{'；'.join(signal['recommended_questions'])}", f"- 风险/反例：{'；'.join(signal['risks'])}"])
+        lines.extend([f"## {index}. {signal.get('display_title') or signal['title']}", "", f"- 来源：{signal['source']['name']} / {signal['source']['provider']}", f"- 评分：重要性 {signal['importance_score']}/5，相关性 {signal['relevance_score']}/5，总分 {signal['total_score']}", f"- 摘要：{signal.get('display_summary') or signal['what_happened']}", f"- 为什么重要：{signal['why_important']}", f"- 为什么与你有关：{signal['why_relevant']}", f"- 建议追问：{'；'.join(signal['recommended_questions'])}", f"- 风险/反例：{'；'.join(signal['risks'])}"])
         if present(signal.get("link")):
             lines.append(f"- 链接：{signal['link']}")
         lines.append("")

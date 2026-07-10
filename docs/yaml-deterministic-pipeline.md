@@ -15,7 +15,7 @@ YAML 配置
 -> dashboard 输出
 ```
 
-这里的 YAML 不是装饰，而是把信息源、清洗规则、用户画像和评分逻辑从 Ruby 代码中拆出来。这样做的好处是：代码负责执行，YAML 负责策略和边界。
+这里的 YAML 不是装饰，而是把信息源、清洗规则、用户画像和评分逻辑从 Python 代码中拆出来。这样做的好处是：代码负责执行，YAML 负责策略和边界。
 
 但需要区分两类 YAML：
 
@@ -44,9 +44,9 @@ config/signal-rules.yml
 config/user-profile.yml
 ```
 
-`config/docker-compose.yml` 被 Docker Compose 使用，不被 Ruby 读取。
+`config/docker-compose.yml` 被 Docker Compose 使用，不被 Python pipeline 读取。
 
-`config/fetcher-contract.yml` 是 fetcher adapter 的设计契约，当前不被 Ruby 主流程读取。
+`config/fetcher-contract.yml` 是 fetcher adapter 的设计契约，当前不被 Python 主流程读取。
 
 ## `config/docker-compose.yml`
 
@@ -97,10 +97,10 @@ docker compose -f config/docker-compose.yml up -d rsshub
 - `tags`
 - `notes`
 
-当前主抓取脚本 `src/fetch_rss.rb` 会读取它，并筛选：
+当前主抓取模块 `src/agentic-core/agentic_core/pipeline/fetch_rss.py` 会读取它，并筛选：
 
-```ruby
-source["enabled"] != false && source["source_type"] == "rss"
+```python
+source.get("enabled") is not False and source.get("source_type") == "rss"
 ```
 
 所以当前只有启用的 RSS 源会被抓。
@@ -115,7 +115,7 @@ source["enabled"] != false && source["source_type"] == "rss"
 
 这个文件同时参与 fetch 阶段和 ingestion 阶段。
 
-在 `src/fetch_rss.rb` 中，它实际使用：
+在 `src/agentic-core/agentic_core/pipeline/fetch_rss.py` 中，它实际使用：
 
 - `fetch.user_agent`
 - `fetch.timeout_seconds`
@@ -123,7 +123,7 @@ source["enabled"] != false && source["source_type"] == "rss"
 
 这些字段控制 HTTP 请求的 User-Agent、超时时间和每个 source 的最大 item 数。
 
-在 `src/ingest_adapter_output.rb` 中，它控制 canonical item 的生成规则。
+在 `src/agentic-core/agentic_core/pipeline/ingest_adapter_output.py` 中，它控制 canonical item 的生成规则。
 
 `normalization` 控制：
 
@@ -157,7 +157,7 @@ source["enabled"] != false && source["source_type"] == "rss"
 
 这个文件描述用户画像，决定“什么信息跟用户有关”。
 
-`src/build_signals.rb` 会读取它，并使用：
+`src/agentic-core/agentic_core/pipeline/build_signals.py` 会读取它，并使用：
 
 - `goals[].title`
 - `goals[].keywords`
@@ -189,7 +189,7 @@ source["enabled"] != false && source["source_type"] == "rss"
 - Social Signal
 - Open Source
 
-`src/build_signals.rb` 会用这些词匹配 canonical item 的文本。命中后会生成主题标签，并参与重要性和相关性评分。
+`src/agentic-core/agentic_core/pipeline/build_signals.py` 会用这些词匹配 canonical item 的文本。命中后会生成主题标签，并参与重要性和相关性评分。
 
 `scoring` 定义权重：
 
@@ -261,7 +261,7 @@ config/sources.yml
 config/ingestion-rules.yml
         |
         v
-src/fetch_rss.rb
+src/agentic-core/agentic_core/pipeline/fetch_rss.py
         |
         v
 data/adapter-output/rss-fetch-latest.json
@@ -270,7 +270,7 @@ config/sources.yml
 config/ingestion-rules.yml
         |
         v
-src/ingest_adapter_output.rb
+src/agentic-core/agentic_core/pipeline/ingest_adapter_output.py
         |
         v
 data/canonical-items/latest.json
@@ -278,7 +278,7 @@ data/canonical-items/latest.json
 data/canonical-items/latest.json
         |
         v
-src/store_canonical_jsonl.rb
+src/agentic-core/agentic_core/pipeline/store_canonical_jsonl.py
         |
         v
 data/store/items/YYYY-MM-DD.jsonl
@@ -289,7 +289,7 @@ config/signal-rules.yml
 data/canonical-items/latest.json
         |
         v
-src/build_signals.rb
+src/agentic-core/agentic_core/pipeline/build_signals.py
         |
         v
 data/signals/latest.json
@@ -297,7 +297,7 @@ data/dashboard/latest.md
 data/dashboard/generated-latest.html
 ```
 
-`src/store_canonical_jsonl.rb` 不读取 YAML。它只读取 canonical JSON，并追加写入 JSONL。
+`src/agentic-core/agentic_core/pipeline/store_canonical_jsonl.py` 不读取 YAML。它只读取 canonical JSON，并追加写入 JSONL。
 
 ## 对未来 Agentic AI 版本的边界
 

@@ -150,7 +150,9 @@ Agent 主要 API：
 - `POST /api/agent/provider-settings`：保存 provider 配置，secret 写 `.env`，非 secret 写 local YAML。
 - `POST /api/agent/chat`：调用 `AgenticCore` 运行一次聊天。
 - `GET /api/settings/env`：返回 `.env` 中 GitHub token 的脱敏状态。
-- `PUT /api/settings/env`：保存 `GITHUB_ACCESS_TOKEN` 到 `.env`，不在响应中回传明文。
+- `PUT /api/settings/env`：保存 `GITHUB_ACCESS_TOKEN` 到 `.env`，随后强制重建本机 RSSHub 容器以加载新环境；响应不回传明文。
+
+刷新状态会保留一个脱敏的 `adapter_summary`，其中包含每个 RSS source 的状态、item 数量和结构化错误。只要仍有来源成功，run 会发布结果并标记为 `succeeded_partial`；这不是全局 `last_error`，但 UI 和 Agent 可据此识别失败来源。
 
 旧的 `/api/default-config`、`/api/provider-settings` 和 `/api/chat` 仍作为迁移期兼容 alias 保留。Agent 静态 UI 位于 `src/agentic-core/web_workbench/static/`。
 

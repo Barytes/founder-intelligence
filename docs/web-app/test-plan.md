@@ -14,7 +14,7 @@
 - source overlay 真实读写 `config/sources.yml`。
 - Settings 页面可写 provider settings 到 `.env`/`config/agentic-core.local.yml`，并可写 `GITHUB_ACCESS_TOKEN` 到 `.env`。
 - 未实现的 MCP/API/HTML/file source 不会被当前 refresh 执行。
-- Python refresh runner 调用 Ruby RSS-only pipeline scripts，并保留 latest-success 语义。
+- Browser 与 Agent refresh 共用 Python RSS-only runner，并保留 latest-success 语义。
 - 安全边界仍然拒绝跨 origin 写操作和命令参数。
 
 ## 自动化测试
@@ -23,10 +23,7 @@
 
 ```bash
 uv run --extra dev pytest
-ruby -c src/fetch_rss.rb
-ruby -c src/ingest_adapter_output.rb
-ruby -c src/store_canonical_jsonl.rb
-ruby -c src/build_signals.rb
+PYTHONPATH=src/agentic-core uv run python -m py_compile src/agentic-core/agentic_core/pipeline/*.py
 ```
 
 当前测试覆盖：

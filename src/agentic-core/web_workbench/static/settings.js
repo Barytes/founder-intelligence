@@ -255,7 +255,14 @@ githubTokenFormEl.addEventListener("submit", async (event) => {
       body: JSON.stringify({ github_token: githubToken }),
     });
     renderGitHubToken(result);
-    setStatus(githubTokenSaveStatusEl, "Saved to .env");
+    const rsshubStatus = result?.rsshub?.status;
+    setStatus(
+      githubTokenSaveStatusEl,
+      rsshubStatus === "started"
+        ? "Saved to .env; RSSHub restarted."
+        : "Saved to .env; RSSHub restart needs attention.",
+      rsshubStatus !== "started"
+    );
   } catch (error) {
     const message = formatErrorPrefix(error);
     setStatus(githubTokenSaveStatusEl, message, true);

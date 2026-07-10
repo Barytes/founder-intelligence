@@ -4,7 +4,7 @@ The ingestion step reads adapter output JSON and converts raw fetcher items into
 
 Current implementation:
 
-- `src/ingest_adapter_output.rb`
+- `src/agentic-core/agentic_core/pipeline/ingest_adapter_output.py`
 
 Inputs:
 
@@ -27,4 +27,4 @@ Responsibilities:
 - drop duplicate items within the same run
 - add quality flags for missing optional fields
 
-This step does not persist to a database. The JSON output is the local handoff artifact consumed by `src/store_canonical_jsonl.rb` and by downstream signal processing.
+This step does not persist to a database. The JSON output is the local handoff artifact consumed by `src/agentic-core/agentic_core/pipeline/store_canonical_jsonl.py` and by downstream signal processing.

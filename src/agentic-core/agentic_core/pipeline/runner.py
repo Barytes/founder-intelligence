@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 import secrets
@@ -12,6 +13,11 @@ import yaml
 from agentic_core.pipeline import build_signals, fetch_rss, ingest_adapter_output, store_canonical_jsonl
 
 
+SENSITIVE_VALUE_PATTERN = re.compile(
+    r"(?i)(?:github_access_token|authorization|token)\s*[:=]\s*[^\s,;]+"
+)
+
+
 class PipelineRunner:
     def __init__(self, root: str | Path, timeout_seconds: int = 120):
         self.root = Path(root).resolve()
@@ -21,6 +27,7 @@ class PipelineRunner:
         self.run_started_at: datetime | None = None
         self.store_summary: dict[str, Any] | None = None
         self.signal_diff: dict[str, Any] | None = None
+        self.adapter_summary: dict[str, Any] | None = None
         self.step_results: list[dict[str, Any]] = []
 
     def refresh(self) -> dict[str, Any]:
@@ -33,6 +40,7 @@ class PipelineRunner:
         self.step_results = []
         self.store_summary = None
         self.signal_diff = None
+        self.adapter_summary = None
         self.write_status("running", {"current_step": None, "command_results": []})
         try:
             self.step_fetch_rss()
@@ -46,7 +54,10 @@ class PipelineRunner:
             self.release_lock()
             return status
         signal_count = len(self.parsed_temp_signals().get("signals", []))
-        status_name = "succeeded" if signal_count > 0 else "succeeded_empty"
+        if self.adapter_summary and self.adapter_summary["failed_sources"] + self.adapter_summary["partial_sources"] > 0:
+            status_name = "succeeded_partial"
+        else:
+            status_name = "succeeded" if signal_count > 0 else "succeeded_empty"
         status = self.write_status(
             status_name,
             {
@@ -66,6 +77,7 @@ class PipelineRunner:
         rules = yaml.safe_load((self.root / "config/ingestion-rules.yml").read_text(encoding="utf-8"))
         output = fetch_rss.fetch(sources, rules)
         self.write_json(self.root / "data/adapter-output/rss-fetch-latest.json", output)
+        self.adapter_summary = self.summarize_adapter_output(output)
 
     def step_ingest_adapter_output(self) -> None:
         self.run_step("ingest_adapter_output", self._step_ingest_adapter_output)
@@ -164,6 +176,7 @@ class PipelineRunner:
             "current_step": extra.get("current_step"),
             "last_error": extra.get("last_error"),
             "command_results": extra.get("command_results") or [],
+            "adapter_summary": self.adapter_summary,
             "store_summary": self.store_summary,
             "signal_diff": self.signal_diff,
             "request_id": self.request_id,
@@ -172,6 +185,48 @@ class PipelineRunner:
         }
         self.write_json(self.status_path(), payload)
         return payload
+
+    def summarize_adapter_output(self, output: dict[str, Any]) -> dict[str, Any]:
+        counts = {"ok": 0, "partial": 0, "failed": 0, "skipped": 0}
+        source_results = []
+        for result in output.get("results", []):
+            status = str(result.get("status") or "failed")
+            if status in counts:
+                counts[status] += 1
+            else:
+                counts["failed"] += 1
+            errors = []
+            for error in result.get("errors", []):
+                if not isinstance(error, dict):
+                    continue
+                errors.append(
+                    {
+                        key: self.redact_sensitive_text(value) if key == "message" else value
+                        for key, value in error.items()
+                        if key in {"code", "message", "retryable", "item_scope", "raw_status"}
+                    }
+                )
+            source_results.append(
+                {
+                    "source_id": result.get("source_id"),
+                    "status": status,
+                    "item_count": len(result.get("items", [])),
+                    "errors": errors,
+                }
+            )
+        return {
+            "total_sources": len(source_results),
+            "ok_sources": counts["ok"],
+            "partial_sources": counts["partial"],
+            "failed_sources": counts["failed"],
+            "skipped_sources": counts["skipped"],
+            "items": sum(source["item_count"] for source in source_results),
+            "source_results": source_results,
+        }
+
+    @staticmethod
+    def redact_sensitive_text(value: Any) -> str:
+        return SENSITIVE_VALUE_PATTERN.sub("[REDACTED]", str(value))
 
     def parsed_temp_signals(self):
         return self.parse_json_file(self.temp_signals_path())

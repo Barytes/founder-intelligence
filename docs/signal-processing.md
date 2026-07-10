@@ -4,7 +4,7 @@ This layer turns canonical items into user-facing intelligence signals.
 
 Current implementation:
 
-- `src/build_signals.rb`
+- `src/agentic-core/agentic_core/pipeline/build_signals.py`
 
 Inputs:
 
@@ -39,11 +39,5 @@ questions with an LLM while keeping the same JSON contract.
 Example:
 
 ```bash
-ruby src/build_signals.rb \
-  --input data/canonical-items/latest.json \
-  --profile config/user-profile.yml \
-  --rules config/signal-rules.yml \
-  --output data/signals/latest.json \
-  --markdown data/dashboard/latest.md \
-  --html data/dashboard/generated-latest.html
+PYTHONPATH=src/agentic-core uv run python -m agentic_core.pipeline.runner --root .
 ```

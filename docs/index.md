@@ -31,7 +31,7 @@ Start here when working on this repository.
 ## Important Runtime Boundaries
 
 - Current implemented fetch path is RSS-only.
-- The current HTTP backend is Python/FastAPI; refresh still delegates to Ruby pipeline scripts.
+- The current HTTP backend and RSS-only refresh pipeline are Python-native.
 - MCP/API/HTML source templates and contracts exist, but no runnable fetcher is implemented for them yet.
 - Schedule fields exist in configuration, but no scheduler consumes them yet.
 - `config/sources.yml` is the only source registry used by the main demo flow.

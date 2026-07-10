@@ -28,7 +28,7 @@ L3 要让 Agentic Core 获得这些能力：
 当前 Ruby 主流程是：
 
 ```text
-src/web/pipeline_runner.rb
+src/agentic-core/agentic_core/pipeline/runner.py
   fetch_rss
   -> ingest_adapter_output
   -> store_canonical_jsonl
@@ -325,7 +325,7 @@ L3.5 已按这个方向迁移：先建立 parity tests，再迁移 deterministic
 因此当前边界是：
 
 - Agent tool path：Python-native `agentic_core.pipeline.runner.PipelineRunner`。
-- Web app path：Python `web_workbench.pipeline_runner.PipelineRunner`。
+- Web app path：Python `agentic_core.pipeline.runner.PipelineRunner`。
 - Ruby wrapper：已移除。
 
 ## Permission Model

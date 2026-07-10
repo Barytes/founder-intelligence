@@ -128,11 +128,11 @@ If Python output is only roughly similar, scores and signal ordering may drift.
 
 Mitigation: exact parity tests for deterministic stages and runner failure behavior.
 
-### R2: Split Web app and Agent refresh semantics
+### R2: Web and Agent refresh entrypoints drift
 
-The Agent path and Web app path are both Python, but they currently use separate runner implementations.
+The two callers must continue to use the same runner rather than reintroducing parallel refresh implementations.
 
-Mitigation: keep both test suites green, document the boundary explicitly, and unify the runner later only as a separate feature.
+Mitigation: `web_workbench.app` and `run_refresh_pipeline` both import `agentic_core.pipeline.runner.PipelineRunner`; unified API and pipeline tests cover that shared boundary.
 
 ### R3: Scope confusion
 

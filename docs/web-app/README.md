@@ -23,5 +23,5 @@ Current runtime facts:
 - The Web app can edit `config/user-profile.yml` and `config/sources.yml`.
 - Settings can write local provider secrets/GitHub token to `.env` and provider overrides to gitignored `config/agentic-core.local.yml`.
 - The implemented fetch path remains RSS-only.
-- Refresh still executes the existing Ruby pipeline scripts as command-line steps.
+- Browser refresh and Agent refresh both use the same Python-native RSS-only runner.
 - MCP/API/HTML/file source templates are not runnable fetchers in the current MVP.

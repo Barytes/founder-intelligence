@@ -30,11 +30,11 @@ FastAPI unified backend
   +-- agent shell:  src/agentic-core/web_workbench/static/index.html
   +-- settings UI:  src/agentic-core/web_workbench/static/settings.html
   +-- data/config:  web_workbench.dashboard_repository.DashboardRepository
-  +-- refresh:      web_workbench.pipeline_runner.PipelineRunner
+  +-- refresh:      agentic_core.pipeline.runner.PipelineRunner
   +-- agent core:   agentic_core.AgenticCore
 ```
 
-Web app 没有重新实现抓取、ingestion、存储或评分逻辑。页面触发 refresh 时，Python 后端仍然串行调用现有 Ruby pipeline 脚本。
+Web app 不再维护第二套抓取、ingestion、存储或评分逻辑。页面和 Agent 触发 refresh 时，都调用同一个 Python-native pipeline runner。
 
 ## 启动入口
 
@@ -89,7 +89,7 @@ FastAPI app 的职责是很薄的一层 HTTP 编排：
 
 - 返回静态前端 shell 和资源。
 - 调用 `DashboardRepository` 读取本地数据和配置文件。
-- 调用 Python `PipelineRunner` 触发 refresh；runner 内部调用 Ruby scripts。
+- 调用 Python `agentic_core.pipeline.runner.PipelineRunner` 触发 refresh。
 - 对写操作和 `/api/refresh` 做 same-origin 检查，并按启动 host/port 精确匹配 allowed origins。
 - 拒绝 `command`、`script`、`path`、`argv`、`args` 这类 refresh 参数，避免把页面 API 变成任意命令执行入口。
 
@@ -141,7 +141,7 @@ GET /api/profile
 
 前端不再维护第二份 source catalog，也不再把 profile/source 状态保存在浏览器 localStorage。来源列表、启用状态、可运行状态、YAML 原文都来自 `/api/sources`。
 
-`/agent` 只保留聊天、工具状态和工具调用日志。Agent provider、model、base URL、API key 迁移到 `/settings`。`/settings` 还可以写入 `GITHUB_ACCESS_TOKEN` 到项目根目录 `.env`，用于 RSSHub GitHub route 等本机依赖；页面和 API 只显示脱敏状态，不回传 secret 明文。
+`/agent` 只保留聊天、工具状态和工具调用日志。Agent provider、model、base URL、API key 迁移到 `/settings`。`/settings` 还可以写入 `GITHUB_ACCESS_TOKEN` 到项目根目录 `.env`，用于 RSSHub GitHub route 等本机依赖；保存后会强制重建 RSSHub 容器，使新环境立即生效。页面和 API 只显示脱敏状态，不回传 secret 明文。
 
 ## 配置读写层
 
@@ -185,7 +185,7 @@ sources
 
 ## Refresh Runner
 
-`src/agentic-core/web_workbench/pipeline_runner.py` 负责把页面上的“刷新”转换成一次串行 pipeline 执行。
+`src/agentic-core/agentic_core/pipeline/runner.py` 负责网页和 Agent 共用的一次串行 pipeline 执行，并将逐 source 的脱敏抓取状态写入 `refresh-status.json` 的 `adapter_summary`；存在来源失败但仍有结果时，状态为 `succeeded_partial`。
 
 当前步骤顺序：
 
@@ -197,26 +197,10 @@ fetch_rss
   -> publish data/signals/latest.json
 ```
 
-对应命令由 `PipelineRunner#default_commands` 构造：
+对应实现由同一个 Python runner 串行调用四个 Python stage：
 
 ```text
-ruby src/fetch_rss.rb --output data/adapter-output/rss-fetch-latest.json
-
-ruby src/ingest_adapter_output.rb \
-  --input data/adapter-output/rss-fetch-latest.json \
-  --output data/canonical-items/latest.json
-
-ruby src/store_canonical_jsonl.rb \
-  --input data/canonical-items/latest.json \
-  --store-dir data/store
-
-ruby src/build_signals.rb \
-  --input data/canonical-items/latest.json \
-  --profile config/user-profile.yml \
-  --rules config/signal-rules.yml \
-  --output data/app/tmp/<request_id>/signals.json \
-  --markdown data/app/tmp/<request_id>/dashboard.md \
-  --html data/app/tmp/<request_id>/generated-latest.html
+fetch_rss -> ingest_adapter_output -> store_canonical_jsonl -> build_signals
 ```
 
 runner 的运行机制：
@@ -225,13 +209,13 @@ runner 的运行机制：
 2. 通过 `data/app/refresh.lock` 防止并发 refresh。
 3. 生成 `refresh-<timestamp>-<random>` 格式的 `request_id`。
 4. 写入 `data/app/refresh-status.json`，状态为 `running`。
-5. 使用 `subprocess.run` 在 repo root 下按固定顺序运行每一步。
-6. 每一步记录 exit status、开始和结束时间、stdout/stderr 尾部日志。
+5. 在 repo root 下按固定顺序运行 Python stage。
+6. 每一步记录开始和结束时间及结果。
 7. 每一步后验证关键产物是否存在且 JSON 可解析。
-8. 从 store step stdout 提取本次输入、新增、重复数量。
+8. 从 store stage 收集本次输入、新增、重复数量。
 9. 在发布前对比上一版和新版 signal id，生成 `signal_diff`。
 10. `build_signals` 产物通过验收后，先复制到临时发布文件，再 `mv` 到 `data/signals/latest.json`。
-11. 成功时写入 `succeeded` 或 `succeeded_empty`。
+11. 成功时写入 `succeeded`、`succeeded_partial` 或 `succeeded_empty`。
 12. 失败时写入 `failed`，并保留原有 `data/signals/latest.json`。
 13. 成功后清理 `data/app/tmp/`，默认保留最近 5 次 refresh 目录。
 
@@ -281,7 +265,7 @@ failed_stale_lock
 - refresh 是用户点击触发，不是 scheduler 触发。
 - refresh 当前仍是同步 HTTP 请求；页面会等待整个 pipeline 完成。
 - Web app 读取 `data/signals/latest.json` 展示最新成功结果，不读取旧静态 sample data。
-- `src/build_signals.rb` 仍可生成 Markdown/HTML 对照产物，但 Web app 首页来自 `src/web/public/index.html`。
+- Python signal builder 仍可生成 Markdown/HTML 对照产物，但 Web app 首页来自 `src/web/public/index.html`。
 
 ## 测试覆盖
 
@@ -320,8 +304,8 @@ src/agentic-core/web_workbench/app.py
 src/agentic-core/web_workbench/dashboard_repository.py
   读取 latest signals、latest run、refresh status、profile 和 sources，并写入允许编辑的配置文件。
 
-src/agentic-core/web_workbench/pipeline_runner.py
-  串行调用现有 Ruby RSS-only pipeline scripts，管理 lock、status、临时产物、diff 和发布。
+src/agentic-core/agentic_core/pipeline/runner.py
+  网页和 Agent 共用的 Python RSS-only runner，管理 lock、status、临时产物、diff 和发布。
 
 src/web/public/
   Dashboard 前端静态资源。迁移前 Ruby Web app 后端文件已移除，只保留前端 shell。

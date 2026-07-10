@@ -59,6 +59,6 @@ Ingestion responsibilities:
 
 ## Current Implementation
 
-The current local implementation is `src/fetch_rss.rb`. It reads enabled RSS sources from `config/sources.yml`, fetches RSSHub XML, and writes adapter output JSON without applying final ingestion normalization.
+The current local implementation is `src/agentic-core/agentic_core/pipeline/fetch_rss.py`. It reads enabled RSS sources from `config/sources.yml`, fetches RSSHub XML, and writes adapter output JSON without applying final ingestion normalization.
 
 Future MCP/API/HTML adapters should conform to the same adapter output shape before being wired into the main refresh path.
