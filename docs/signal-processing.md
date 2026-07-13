@@ -1,43 +1,22 @@
-# Signal Processing MVP
+# Signal Processing：Deterministic Baseline + Agent Judgment
 
-This layer turns canonical items into user-facing intelligence signals.
+当前评分不是 LLM-only，也不是旧版纯规则。
 
-Current implementation:
+## Pipeline
 
-- `src/agentic-core/agentic_core/pipeline/build_signals.py`
+1. `compute_baseline_assessment` 保留既有 importance/relevance/display contract。
+2. Candidate pool 从 baseline Top-N、source diversity、new topic/entity、pinned/shared source 和 deterministic exploration 取有界集合。
+3. News Assessment Agent 输出 relevance、novelty、credibility、urgency、counter-signal、reasoning summary 和 exact evidence spans。
+4. 本地 verifier 检查 item ID、span boundary/quote、正文支持、数值范围和 prohibited claims。
+5. `HybridRankingPolicy` 在代码中计算 Agent component 与 final score；模型不能返回权重或 final score。
+6. invalid/timeout 逐项 fallback；全部失败发布合法 deterministic-only artifact。
 
-Inputs:
+每个 signal 保留旧 dashboard 字段，并可新增：
 
-- `data/canonical-items/latest.json`
-- `config/user-profile.yml`
-- `config/signal-rules.yml`
+- `score_provenance.baseline_components`；
+- baseline/Agent/final score；
+- policy/assessment/workflow/profile/source snapshot IDs；
+- candidate reasons；
+- Agent valid/fallback state。
 
-Outputs:
-
-- `data/signals/latest.json`
-- `data/dashboard/latest.md`
-- `data/dashboard/generated-latest.html`
-
-Responsibilities:
-
-- detect product and market themes with keyword rules
-- match items against the user profile, goals, interests, watched entities, and negative preferences
-- score item importance from source priority, recency, theme matches, and content depth
-- score personal relevance from profile keyword matches and exclusions
-- generate a fixed decision-support card for each top signal:
-  - what happened
-  - why it matters
-  - why it is relevant to the user
-  - follow-up questions
-  - risks or counterpoints
-  - source link
-
-This is intentionally deterministic for MVP validation. It does not call an LLM.
-The next version can replace `what_happened`, relevance reasoning, and follow-up
-questions with an LLM while keeping the same JSON contract.
-
-Example:
-
-```bash
-PYTHONPATH=src/agentic-core uv run python -m agentic_core.pipeline.runner --root .
-```
+重复 item 不会占多个排名位置。三项以上异常全高分分布会被 calibration policy 拒绝。Recorded golden fixture 证明机制能把相关事实项从 deterministic Top-N 外召回并改善 Top-1；这不替代真实用户盲评。

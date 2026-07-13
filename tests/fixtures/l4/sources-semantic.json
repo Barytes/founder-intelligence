@@ -1,0 +1,150 @@
+{
+  "base_urls": {
+    "rsshub": "http://localhost:1200"
+  },
+  "defaults": {
+    "enabled": true,
+    "priority": "medium",
+    "refresh_interval_minutes": 30,
+    "retry_attempts": 3,
+    "timeout_seconds": 20
+  },
+  "source_templates": {
+    "wechat_mcp_account": {
+      "category": "founder_research",
+      "connection": {
+        "accounts": [
+          "replace_with_account_id"
+        ],
+        "tool": "wechat-mcp"
+      },
+      "enabled": false,
+      "fetcher": "wechat-mcp",
+      "notes": "Enable only after the target public accounts and MCP fetcher contract are confirmed.",
+      "provider": "wechat",
+      "schedule": {
+        "refresh_interval_minutes": 120
+      },
+      "source_type": "mcp",
+      "tags": [
+        "wechat",
+        "long-form"
+      ]
+    },
+    "xiaohongshu_mcp_keyword": {
+      "category": "consumer_attention",
+      "connection": {
+        "query": "AI founder",
+        "sort": "latest",
+        "tool": "xiaohongshu-mcp"
+      },
+      "enabled": false,
+      "fetcher": "xiaohongshu-mcp",
+      "notes": "Enable only after xiaohongshu-mcp is installed and the exact query/account target is confirmed.",
+      "provider": "xiaohongshu",
+      "schedule": {
+        "refresh_interval_minutes": 60
+      },
+      "source_type": "mcp",
+      "tags": [
+        "xiaohongshu",
+        "china-market"
+      ]
+    }
+  },
+  "sources": [
+    {
+      "category": "developer_trends",
+      "connection": {
+        "required_env": [
+          "GITHUB_ACCESS_TOKEN"
+        ],
+        "rss_url": "http://localhost:1200/github/trending/daily/any",
+        "rsshub_route": "/github/trending/daily/any"
+      },
+      "enabled": true,
+      "fetcher": "rsshub",
+      "id": "github-trending-daily",
+      "name": "GitHub Trending Daily",
+      "notes": "GitHub Trending requires GITHUB_ACCESS_TOKEN in .env.",
+      "priority": "high",
+      "provider": "github",
+      "schedule": {
+        "refresh_interval_minutes": 30
+      },
+      "source_type": "rss",
+      "tags": [
+        "open-source",
+        "developer-tools",
+        "startup-signals"
+      ]
+    },
+    {
+      "category": "market_discussion",
+      "connection": {
+        "rss_url": "http://localhost:1200/zhihu/hot",
+        "rsshub_route": "/zhihu/hot"
+      },
+      "enabled": true,
+      "fetcher": "rsshub",
+      "id": "zhihu-hot",
+      "name": "Zhihu Hot",
+      "priority": "medium",
+      "provider": "zhihu",
+      "schedule": {
+        "refresh_interval_minutes": 20
+      },
+      "source_type": "rss",
+      "tags": [
+        "china-market",
+        "public-opinion",
+        "trending"
+      ]
+    },
+    {
+      "category": "consumer_attention",
+      "connection": {
+        "rss_url": "http://localhost:1200/bilibili/popular/all",
+        "rsshub_route": "/bilibili/popular/all"
+      },
+      "enabled": true,
+      "fetcher": "rsshub",
+      "id": "bilibili-popular-all",
+      "name": "Bilibili Popular All",
+      "priority": "medium",
+      "provider": "bilibili",
+      "schedule": {
+        "refresh_interval_minutes": 30
+      },
+      "source_type": "rss",
+      "tags": [
+        "video",
+        "creator-economy",
+        "china-market"
+      ]
+    },
+    {
+      "category": "reference_feed",
+      "connection": {
+        "rss_url": "http://localhost:1200/github/activity/DIYgod",
+        "rsshub_route": "/github/activity/DIYgod"
+      },
+      "enabled": false,
+      "fetcher": "rsshub",
+      "id": "github-activity-diygod",
+      "name": "GitHub Activity DIYgod",
+      "notes": "Known-good GitHub route for RSSHub smoke tests.",
+      "priority": "low",
+      "provider": "github",
+      "schedule": {
+        "refresh_interval_minutes": 60
+      },
+      "source_type": "rss",
+      "tags": [
+        "github",
+        "reference"
+      ]
+    }
+  ],
+  "version": 1
+}

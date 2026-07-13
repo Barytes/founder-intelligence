@@ -1,6 +1,8 @@
 services:
   rsshub:
-    image: diygod/rsshub
+    # Bilibili creator routes can fall back to browser rendering.  The base
+    # image has no browser binary and returns 503 for those routes.
+    image: ghcr.io/diygod/rsshub:chromium-bundled
     container_name: rsshub
     restart: unless-stopped
     ports:

@@ -1,13 +1,27 @@
-# 当前 Runtime 架构
+# 当前 L4 Runtime 架构
 
-本文描述当前已经实现的 Founder Intelligence 本机运行路径。
+Founder Intelligence 当前默认运行形态是 profile-driven fixed workflow，不是末端 AI briefing，也不是完全自主 controller。
 
-## 当前能力
+## 用户闭环
 
-- 一个 FastAPI 服务提供信号控制台、Agent Workbench 和 Settings 页面。
-- 一个 Python-native、RSS-only pipeline 同时服务网页刷新和 Agent 工具刷新。
-- RSSHub 提供已启用 RSS source 的上游路由；MCP/API/HTML/file 模板尚不可运行。
-- 刷新产出 canonical items、append-only JSONL store、signals、Markdown/HTML 对照产物和 refresh status。
+```text
+显式用户信息 / correction / follow / share
+-> UserContextEvent
+-> PydanticAI Profile Compiler
+-> immutable ProfileSnapshot / EffectiveProfile
+-> deterministic source-discovery due decision
+-> SearchProvider + typed candidate Agent
+-> local URL/connector/quality validation
+-> probation SourceTarget / AcquisitionBinding
+-> collect + Inbox canonical ingestion
+-> deterministic baseline score
+-> bounded candidate pool
+-> evidence-backed News Assessment Agent
+-> code-owned hybrid score and priority queue
+-> 当前三栏 dashboard
+```
+
+固定 step order 定义在 `agentic_core.l4.workflow.L4_STEP_ORDER`。Web `POST /api/refresh` 与 Agent tool `run_refresh_pipeline` 都进入 `PipelineRunner.refresh()`；runner 在 L4 gate 开启时委派 `L4WorkflowRunner`，继续复用既有 lock、status、temp dir 和 atomic publish。
 
 ## 启动
 
@@ -16,75 +30,39 @@ docker compose -f config/docker-compose.yml up -d rsshub
 PYTHONPATH=src/agentic-core uv run python -m uvicorn web_workbench.app:app --host 127.0.0.1 --port 4567
 ```
 
-访问 `http://127.0.0.1:4567/`。应用启动时也会尝试启动 RSSHub；设置 `FI_AUTO_START_RSSHUB=0` 可关闭该行为。
+页面：
 
-## 刷新入口
+- `/`：信号控制台；
+- `/agent`：Agent Workbench；
+- `/settings`：本机 provider/secret 配置；
+- `/inspector`：workflow、profile、source、score、replay 和 kill-switch 开发者视图。
 
-网页 `POST /api/refresh` 与 Agent 的 `run_refresh_pipeline` 都调用：
+## Source of truth
 
-```text
-src/agentic-core/agentic_core/pipeline/runner.py
-```
+- `data/app/founder-intelligence.db`：events、profiles、source catalog/snapshots、discovery trace、assessments、workflow trace 和 runtime controls。
+- `data/canonical-items/latest.json`：当前 canonical handoff。
+- `data/store/**/*.jsonl`：canonical append-only export/handoff。
+- `data/signals/latest.json`：atomic published latest-success dashboard artifact。
+- `data/app/refresh-status.json`：当前/最近 refresh 状态。
 
-完整 pipeline 可单独运行：
+`config/sources.yml` 已 semantic import 并保留 byte-identical backup。`config/user-profile.yml` 不会导入 ProfileStore；`config/user-profile.example.yml` 只展示格式。
 
-```bash
-PYTHONPATH=src/agentic-core uv run python -m agentic_core.pipeline.runner --root .
-```
+自动发现产生的 native RSS/RSSHub binding 会在 snapshot boundary 转为现有 collector contract，并保留 target/binding provenance 与 probation item quota；因此 discovery source 与 YAML bootstrap source 使用同一真实 collect/ingest 主线。
 
-Python runner 以固定顺序执行：
+## 失败与回滚
 
-```text
-fetch_rss
-  -> ingest_adapter_output
-  -> store_canonical_jsonl
-  -> build_signals
-  -> publish data/signals/latest.json
-```
+- profile/discovery/Agent failure 有明确 deterministic fallback；
+- 单 connector failure 可 `succeeded_partial`；
+- canonical failure 不进入 scoring/publish；
+- publish failure 保留上一成功 signals；
+- Inspector replay 不调用外部依赖，并覆盖 Agent 关闭、整段失败与合法空排序；
+- active profile/source snapshot 可回滚且保留历史；
+- profile/source discovery/ranking/inbox 可由持久化 kill switch 独立关闭；
+- `FI_L4_LEGACY_FALLBACK=1` 保留一个发布周期的全局旧路径。
 
-它使用 `data/app/refresh.lock` 避免并发刷新，失败时保留上一版成功 signals。若个别来源失败但仍有来源成功，状态为 `succeeded_partial`，并在 `data/app/refresh-status.json` 的 `adapter_summary` 中记录脱敏的逐来源状态。
+## 尚未实现
 
-## 模块和数据流
-
-```text
-config/sources.yml + config/ingestion-rules.yml
-        |
-        v
-agentic_core.pipeline.fetch_rss
-        |
-        v
-data/adapter-output/rss-fetch-latest.json
-        |
-        v
-agentic_core.pipeline.ingest_adapter_output
-        |
-        v
-data/canonical-items/latest.json
-        |
-        v
-agentic_core.pipeline.store_canonical_jsonl
-        |
-        +--> data/store/items/YYYY-MM-DD.jsonl
-        +--> data/store/runs/YYYY-MM-DD.jsonl
-        |
-        v
-agentic_core.pipeline.build_signals
-        |
-        +--> data/signals/latest.json
-        +--> data/app/tmp/<request-id>/dashboard.md
-        +--> data/app/tmp/<request-id>/generated-latest.html
-        |
-        v
-web_workbench.app
-```
-
-`src/web/public/` 是当前信号控制台前端；`data/dashboard/index.html` 只是历史对照产物，不是 Web app 首页。
-
-## 运行边界
-
-- `config/sources.yml` 是唯一实际 source registry。
-- 当前仅执行 `enabled != false` 且 `source_type == rss` 的来源。
-- `schedule.refresh_interval_minutes` 仍只是配置，没有 scheduler 消费。
-- `config/user-profile.yml` 和 `config/sources.yml` 可由 Web app 编辑。
-- `.env` 保存本机 provider secret 和 `GITHUB_ACCESS_TOKEN`；保存 GitHub token 后会重建 RSSHub 容器。
-- Ruby dashboard 和 Ruby refresh scripts 已删除；当前没有第二套 refresh runtime。
+- 任意 API/HTML/MCP/browser connector；
+- 分布式 worker、background job 和 durable cross-process execution；
+- L5 自主 planner/controller；
+- 远程多用户认证和加密 secret store。

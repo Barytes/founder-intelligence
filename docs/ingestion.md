@@ -1,30 +1,22 @@
-# Ingestion Minimal Design
+# Canonical Ingestion
 
-The ingestion step reads adapter output JSON and converts raw fetcher items into canonical items.
+Ingestion 将 connector result 与 Inbox item 转换/合并为统一 canonical items。
 
-Current implementation:
+## Inputs and output
 
-- `src/agentic-core/agentic_core/pipeline/ingest_adapter_output.py`
+- RSS/RSSHub adapter output；
+- SQLite Inbox items（`origin=user_shared`）；
+- `config/ingestion-rules.yml`；
+- 输出 `data/canonical-items/latest.json`。
 
-Inputs:
+## Responsibilities
 
-- `data/adapter-output/rss-fetch-latest.json`
-- `config/sources.yml`
-- `config/ingestion-rules.yml`
+- HTML/text cleanup and whitespace normalization；
+- datetime/link normalization and tracking-parameter removal；
+- provider-aware dedupe key and content hash；
+- within-run duplicate removal；
+- quality flags；
+- Inbox minimal fact preservation，即使持续来源解析失败；
+- provenance 保留 target/binding/origin。
 
-Output:
-
-- `data/canonical-items/latest.json`
-
-Responsibilities:
-
-- clean HTML from title, summary, content, and author fields
-- collapse whitespace
-- remove configured tracking query parameters from links
-- normalize datetimes to ISO 8601 when possible
-- generate `content_hash`
-- generate provider-aware `dedupe_key`
-- drop duplicate items within the same run
-- add quality flags for missing optional fields
-
-This step does not persist to a database. The JSON output is the local handoff artifact consumed by `src/agentic-core/agentic_core/pipeline/store_canonical_jsonl.py` and by downstream signal processing.
+Canonical failure 是发布硬边界：workflow 不进入 baseline score、Agent assessment 或 publish。Canonical JSON 同时写入 append-only JSONL handoff，但 source/profile/workflow state 已由 SQLite 持久化。

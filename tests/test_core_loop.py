@@ -1,40 +1,25 @@
 import json
 
+from pydantic_ai import ModelResponse, RequestUsage, TextPart, ToolCallPart, models
+from pydantic_ai.models.function import FunctionModel
+
 from agentic_core.core import AgenticCore
-from agentic_core.providers.base import ProviderResponse, ProviderToolCall
-from agentic_core.schemas import AgenticConfig, AgentConfig, PathConfig, ProviderConfig, ToolConfig
+from agentic_core.runtime.pydantic_ai_runtime import PydanticAIRuntime
+from agentic_core.schemas import (
+    AgentConfig,
+    AgenticConfig,
+    PathConfig,
+    ProviderConfig,
+    RunResult,
+    ToolConfig,
+)
 from agentic_core.tools.registry import ToolRegistry
 
 
-class FakeProvider:
-    def __init__(self):
-        self.calls = 0
-
-    def complete(self, *, messages, tools, temperature):
-        self.calls += 1
-        if self.calls == 1:
-            return ProviderResponse(
-                message={
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [
-                        {
-                            "id": "call_1",
-                            "type": "function",
-                            "function": {"name": "echo", "arguments": '{"text":"hi"}'},
-                        }
-                    ],
-                },
-                usage={"total_tokens": 5},
-                tool_calls=[ProviderToolCall(id="call_1", name="echo", arguments={"text": "hi"})],
-            )
-        return ProviderResponse(
-            message={"role": "assistant", "content": "final answer"},
-            usage={"total_tokens": 7},
-        )
+models.ALLOW_MODEL_REQUESTS = False
 
 
-def make_config(max_turns=4):
+def make_config(max_turns: int = 4) -> AgenticConfig:
     return AgenticConfig(
         provider=ProviderConfig(
             type="openai_compatible",
@@ -54,244 +39,188 @@ def make_config(max_turns=4):
     )
 
 
-def test_core_runs_tool_loop_to_final_answer():
-    provider = FakeProvider()
-    registry = ToolRegistry({"echo": ToolConfig(enabled=True)})
+def make_registry(name: str = "echo", handler=None) -> ToolRegistry:
+    registry = ToolRegistry({name: ToolConfig(enabled=True)})
+    properties = {"text": {"type": "string"}} if name == "echo" else {}
     registry.register(
-        name="echo",
-        description="Echo text",
+        name=name,
+        description=f"{name} tool",
         parameters={
             "type": "object",
-            "properties": {"text": {"type": "string"}},
-            "required": ["text"],
+            "properties": properties,
+            "required": ["text"] if name == "echo" else [],
             "additionalProperties": False,
         },
-        handler=lambda args, context: {"echo": args["text"]},
+        handler=handler
+        or (
+            (lambda args, context: {"echo": args["text"]})
+            if name == "echo"
+            else (lambda _args, _context: {})
+        ),
     )
-    core = AgenticCore(config=make_config(), provider=provider, tools=registry)
+    return registry
 
-    result = core.run(messages=[{"role": "user", "content": "say hi"}], context={})
+
+def make_core(config, registry, model) -> AgenticCore:
+    runtime = PydanticAIRuntime(config=config, tools=registry, model=model)
+    return AgenticCore(config=config, tools=registry, runtime=runtime)
+
+
+def test_core_defaults_to_pydantic_ai_runtime():
+    core = AgenticCore(config=make_config(), tools=ToolRegistry())
+
+    assert isinstance(core.runtime, PydanticAIRuntime)
+    assert not hasattr(core, "provider")
+
+    core.close()
+
+
+def test_core_runs_tool_loop_to_final_answer_and_preserves_messages():
+    def recorded_model(messages, _info):
+        if len(messages) == 1:
+            return ModelResponse(
+                parts=[ToolCallPart("echo", {"text": "hi"}, tool_call_id="call-1")],
+                usage=RequestUsage(input_tokens=2, output_tokens=3),
+            )
+        return ModelResponse(
+            parts=[TextPart("final answer")],
+            usage=RequestUsage(input_tokens=4, output_tokens=5),
+        )
+
+    config = make_config()
+    registry = make_registry()
+    core = make_core(config, registry, FunctionModel(recorded_model))
+
+    result = core.run(messages=[{"role": "user", "content": "say hi"}])
 
     assert result.status == "ok"
     assert result.final_text == "final answer"
     assert result.tool_calls[0].name == "echo"
-    assert result.tool_calls[0].result == {"echo": "hi"}
     assert result.tool_calls[0].arguments == {"text": "hi"}
-    assert result.usage == {"total_tokens": 12}
-
-    tool_messages = [m for m in result.messages if m.get("role") == "tool"]
+    assert result.tool_calls[0].result == {"echo": "hi"}
+    assert result.usage["total_tokens"] == 14
+    tool_messages = [message for message in result.messages if message["role"] == "tool"]
     assert len(tool_messages) == 1
     assert json.loads(tool_messages[0]["content"]) == {"echo": "hi"}
 
 
-def test_core_returns_error_when_max_turns_reached():
-    class LoopingProvider:
-        def complete(self, *, messages, tools, temperature):
-            return ProviderResponse(
-                message={"role": "assistant", "content": "", "tool_calls": []},
-                tool_calls=[ProviderToolCall(id="call_1", name="echo", arguments={"text": "hi"})],
+def test_core_groups_parallel_tool_calls_in_one_assistant_message():
+    def recorded_model(messages, _info):
+        if len(messages) == 1:
+            return ModelResponse(
+                parts=[
+                    ToolCallPart("echo", {"text": "one"}, tool_call_id="call-1"),
+                    ToolCallPart("echo", {"text": "two"}, tool_call_id="call-2"),
+                ]
             )
+        return ModelResponse(parts=[TextPart("done")])
 
-    registry = ToolRegistry({"echo": ToolConfig(enabled=True)})
-    registry.register(
-        name="echo",
-        description="Echo text",
-        parameters={
-            "type": "object",
-            "properties": {"text": {"type": "string"}},
-            "required": ["text"],
-            "additionalProperties": False,
-        },
-        handler=lambda args, context: {"echo": args["text"]},
+    core = make_core(
+        make_config(), make_registry(), FunctionModel(recorded_model)
     )
-    core = AgenticCore(config=make_config(max_turns=1), provider=LoopingProvider(), tools=registry)
 
-    result = core.run(messages=[{"role": "user", "content": "loop"}], context={})
+    result = core.run(messages=[{"role": "user", "content": "twice"}])
+
+    assistant_calls = [
+        message for message in result.messages if message.get("tool_calls")
+    ]
+    assert len(assistant_calls) == 1
+    assert [
+        call["function"]["name"] for call in assistant_calls[0]["tool_calls"]
+    ] == ["echo", "echo"]
+
+
+def test_core_enforces_max_turns_through_pydantic_usage_limits():
+    model = FunctionModel(
+        lambda _messages, _info: ModelResponse(
+            parts=[ToolCallPart("echo", {"text": "again"})]
+        )
+    )
+    config = make_config(max_turns=1)
+    core = make_core(config, make_registry(), model)
+
+    result = core.run(messages=[{"role": "user", "content": "loop"}])
 
     assert result.status == "error"
     assert result.errors == ["max turns reached"]
-
-
-def test_core_serializes_tool_result_as_json_for_tool_messages():
-    registry = ToolRegistry({"echo": ToolConfig(enabled=True)})
-    registry.register(
-        name="echo",
-        description="Echo text",
-        parameters={
-            "type": "object",
-            "properties": {"text": {"type": "string"}},
-            "required": ["text"],
-            "additionalProperties": False,
-        },
-        handler=lambda args, context: {"echo": args["text"]},
-    )
-
-    class Provider:
-        def complete(self, *, messages, tools, temperature):
-            return ProviderResponse(
-                message={"role": "assistant", "content": "", "tool_calls": []},
-                tool_calls=[ProviderToolCall(id="call_1", name="echo", arguments={"text": "hi"})],
-            )
-
-    core = AgenticCore(config=make_config(max_turns=1), provider=Provider(), tools=registry)
-    result = core.run(messages=[{"role": "user", "content": "say hi"}], context={})
-
-    assert result.status == "error"
-    assert result.errors == ["max turns reached"]
-    tool_messages = [m for m in result.messages if m.get("role") == "tool"]
-    assert tool_messages and tool_messages[0]["content"] == json.dumps({"echo": "hi"}, ensure_ascii=False)
 
 
 def test_core_aggregates_artifact_paths_from_tool_results():
-    class ArtifactProvider:
-        def complete(self, *, messages, tools, temperature):
-            return ProviderResponse(
-                message={
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [
-                        {
-                            "id": "call_1",
-                            "type": "function",
-                            "function": {"name": "write", "arguments": "{}"},
-                        }
-                    ],
-                },
-                tool_calls=[ProviderToolCall(id="call_1", name="write", arguments={})],
-            )
-
-    registry = ToolRegistry({"write": ToolConfig(enabled=True)})
-    registry.register(
-        name="write",
-        description="Write artifact",
-        parameters={
-            "type": "object",
-            "properties": {},
-            "additionalProperties": False,
+    registry = make_registry(
+        "write",
+        lambda _args, _context: {
+            "artifact_paths": ["data/agentic/latest.json"]
         },
-        handler=lambda args, context: {"artifact_paths": ["data/agentic/latest.json"]},
     )
-    core = AgenticCore(
-        config=make_config(max_turns=1),
-        provider=ArtifactProvider(),
-        tools=registry,
-    )
-    result = core.run(messages=[{"role": "user", "content": "write"}], context={})
 
+    def recorded_model(messages, _info):
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart("write", {})])
+        return ModelResponse(parts=[TextPart("written")])
+
+    core = make_core(make_config(), registry, FunctionModel(recorded_model))
+
+    result = core.run(messages=[{"role": "user", "content": "write"}])
+
+    assert result.status == "ok"
     assert result.artifact_paths == ["data/agentic/latest.json"]
 
 
-def test_core_accumulates_numeric_usage_over_turns():
-    class MultiUsageProvider:
-        def __init__(self):
-            self.calls = 0
+def test_core_returns_structured_error_when_model_fails():
+    def failing_model(_messages, _info):
+        raise RuntimeError("provider down")
 
-        def complete(self, *, messages, tools, temperature):
-            self.calls += 1
-            if self.calls == 1:
-                return ProviderResponse(
-                    message={
-                        "role": "assistant",
-                        "content": "",
-                        "tool_calls": [
-                            {
-                                "id": "call_1",
-                                "type": "function",
-                                "function": {"name": "echo", "arguments": '{"text":"hello"}'},
-                            }
-                        ],
-                    },
-                    usage={"total_tokens": 5, "mode": "chat"},
-                    tool_calls=[ProviderToolCall(id="call_1", name="echo", arguments={"text": "hello"})],
-                )
-            return ProviderResponse(
-                message={"role": "assistant", "content": "done"},
-                usage={"total_tokens": 7, "mode": "final"},
-            )
-
-    registry = ToolRegistry({"echo": ToolConfig(enabled=True)})
-    registry.register(
-        name="echo",
-        description="Echo text",
-        parameters={
-            "type": "object",
-            "properties": {"text": {"type": "string"}},
-            "required": ["text"],
-            "additionalProperties": False,
-        },
-        handler=lambda args, context: {"echo": args["text"]},
+    core = make_core(
+        make_config(), ToolRegistry(), FunctionModel(failing_model)
     )
-    core = AgenticCore(config=make_config(), provider=MultiUsageProvider(), tools=registry)
 
-    result = core.run(messages=[{"role": "user", "content": "sum usage"}], context={})
-
-    assert result.status == "ok"
-    assert result.usage == {"total_tokens": 12, "mode": "final"}
-
-
-def test_core_returns_error_when_provider_fails():
-    class FailingProvider:
-        def complete(self, *, messages, tools, temperature):
-            raise RuntimeError("provider down")
-
-    core = AgenticCore(config=make_config(), provider=FailingProvider(), tools=ToolRegistry())
-    result = core.run(messages=[{"role": "user", "content": "oops"}], context={})
+    result = core.run(messages=[{"role": "user", "content": "oops"}])
 
     assert result.status == "error"
-    assert result.errors == ["provider down"]
+    assert result.errors == ["RuntimeError: provider down"]
     assert result.tool_calls == []
 
 
-def test_core_records_tool_error_and_tool_error_message():
-    class Provider:
-        def complete(self, *, messages, tools, temperature):
-            return ProviderResponse(
-                message={
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [
-                        {
-                            "id": "call_1",
-                            "type": "function",
-                            "function": {"name": "broken", "arguments": "{}"},
-                        }
-                    ],
-                },
-                tool_calls=[ProviderToolCall(id="call_1", name="broken", arguments={})],
-            )
+def test_core_records_tool_error_and_returns_it_to_model():
+    registry = make_registry("broken", lambda _args, _context: 1 / 0)
 
-    registry = ToolRegistry({"broken": ToolConfig(enabled=True)})
-    registry.register(
-        name="broken",
-        description="Broken tool",
-        parameters={"type": "object", "properties": {}, "additionalProperties": False},
-        handler=lambda args, context: 1 / 0,
+    def recorded_model(messages, _info):
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart("broken", {})])
+        return ModelResponse(parts=[TextPart("recovered")])
+
+    core = make_core(make_config(), registry, FunctionModel(recorded_model))
+
+    result = core.run(messages=[{"role": "user", "content": "bad"}])
+
+    assert result.status == "ok"
+    assert result.final_text == "recovered"
+    assert result.tool_calls[0].error == "division by zero"
+    tool_messages = [message for message in result.messages if message["role"] == "tool"]
+    assert tool_messages[0]["content"].startswith("ERROR:")
+
+
+def test_core_merges_default_and_explicit_context_before_runtime():
+    class Runtime:
+        def __init__(self):
+            self.context = None
+
+        def run(self, *, messages, context=None):
+            self.context = context
+            return RunResult(status="ok", messages=messages, final_text="ok")
+
+    runtime = Runtime()
+    core = AgenticCore(config=make_config(), tools=ToolRegistry(), runtime=runtime)
+
+    result = core.run(
+        messages=[{"role": "user", "content": "context"}],
+        context={"profile_id": "profile-1"},
     )
 
-    core = AgenticCore(config=make_config(max_turns=1), provider=Provider(), tools=registry)
-    result = core.run(messages=[{"role": "user", "content": "bad"}], context={})
-
-    assert result.status == "error"
-    assert result.errors == ["max turns reached"]
-    assert result.tool_calls[0].error == "division by zero"
-    tool_messages = [m for m in result.messages if m.get("role") == "tool"]
-    assert tool_messages and tool_messages[0]["content"].startswith("ERROR:")
-
-
-def test_core_builds_provider_with_configured_timeout(monkeypatch):
-    captured: dict[str, float] = {}
-
-    class FakeProvider:
-        pass
-
-    def fake_build_provider(_config, timeout_seconds=60):
-        captured["timeout_seconds"] = timeout_seconds
-        return FakeProvider()
-
-    monkeypatch.setattr("agentic_core.core.build_provider", fake_build_provider)
-
-    config = make_config()
-    config.agent.timeout_seconds = 17.25
-    AgenticCore(config=config)
-
-    assert captured["timeout_seconds"] == 17.25
+    assert result.status == "ok"
+    assert runtime.context == {
+        "signals_path": "data/signals/latest.json",
+        "canonical_items_path": "data/canonical-items/latest.json",
+        "artifact_dir": "data/agentic",
+        "profile_id": "profile-1",
+    }

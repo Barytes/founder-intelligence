@@ -1,0 +1,48 @@
+{
+  "contract_version": 1,
+  "profile_id": "profile-fixture-v1",
+  "user_id": "fixture-user",
+  "schema_version": 1,
+  "created_at": "2026-07-12T00:10:02Z",
+  "based_on_event_ids": [
+    "event-explicit-goal-1",
+    "event-correction-2"
+  ],
+  "active_goals": [
+    "validate a developer tool"
+  ],
+  "interests": [
+    "agent reliability",
+    "context infrastructure"
+  ],
+  "watch_entities": [],
+  "negative_preferences": [
+    "consumer entertainment trends"
+  ],
+  "open_questions": [],
+  "output_preferences": {
+    "language": "en",
+    "default_top_n": 10
+  },
+  "field_provenance": {
+    "active_goals": [
+      "event-explicit-goal-1"
+    ],
+    "interests": [
+      "event-explicit-goal-1"
+    ],
+    "negative_preferences": [
+      "event-correction-2"
+    ]
+  },
+  "field_confidence": {
+    "active_goals": 1.0,
+    "interests": 1.0,
+    "negative_preferences": 1.0
+  },
+  "field_expires_at": {},
+  "model_id": "recorded-fixture-model",
+  "prompt_version": "profile-compiler-v1",
+  "policy_version": "profile-policy-v1",
+  "validation_status": "valid"
+}

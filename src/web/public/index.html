@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Founder Intelligence - 信号控制台</title>
-    <link rel="stylesheet" href="/styles.css?v=20260709-floating-preview" />
+    <link rel="stylesheet" href="/styles.css?v=20260713-runtime-scroll" />
   </head>
   <body>
     <div class="console">
@@ -22,11 +22,23 @@
               <a class="side-nav-link is-active" href="/">信号控制台</a>
               <a class="side-nav-link" href="/agent">智能体工作台</a>
               <a class="side-nav-link" href="/settings">配置</a>
+              <a class="side-nav-link" href="/inspector">运行审计</a>
             </nav>
             <div class="side-actions">
               <button class="side-action primary" id="refresh-button" type="button">刷新</button>
-              <button class="side-action" id="open-user-profile" type="button">编辑 user-profile.yml</button>
+              <button class="side-action" id="open-user-profile" type="button">旧版 YAML（兼容）</button>
             </div>
+            <section class="context-capture" aria-label="用户信息与分享入口">
+              <label for="context-input">更新当前信息</label>
+              <textarea id="context-input" rows="3" placeholder="例如：我现在重点研究 AI Agent 的可靠性与可审计性"></textarea>
+              <button id="save-context" type="button">更新画像</button>
+              <span id="profile-live-status">画像尚未读取</span>
+              <label for="inbox-url">分享阅读或视频链接</label>
+              <input id="inbox-url" type="url" placeholder="https://…" />
+              <input id="inbox-title" type="text" placeholder="可选标题或备注" />
+              <button id="share-inbox" type="button">保存并尝试持续追踪</button>
+              <span id="inbox-live-status">尚未分享内容</span>
+            </section>
             <div class="side-stats" aria-label="运行统计">
               <section class="stat-block">
                 <b id="stat-total">-</b>
@@ -45,15 +57,15 @@
           <section class="pipeline">
             <div class="step">
               <div class="step-code">01</div>
-              <div><b>RSSHub 抓取</b><span>当前实现只运行 RSS 来源。</span></div>
+              <div><b>画像与来源</b><span>解析当前信息并解析可运行来源。</span></div>
             </div>
             <div class="step">
               <div class="step-code">02</div>
-              <div><b>标准化</b><span>转换为统一资讯项。</span></div>
+              <div><b>多渠道获取</b><span>收集来源更新与用户分享内容。</span></div>
             </div>
             <div class="step">
               <div class="step-code">03</div>
-              <div><b>规则评分</b><span>根据个人画像和信号规则计算分数。</span></div>
+              <div><b>混合评分</b><span>保留规则基线并加入有证据的智能判断。</span></div>
             </div>
             <div class="step">
               <div class="step-code">04</div>
@@ -88,8 +100,8 @@
       <section class="user-md-dialog" role="dialog" aria-modal="true" aria-labelledby="user-profile-title">
         <header class="user-md-header">
           <div>
-            <h2 id="user-profile-title">user-profile.yml</h2>
-            <span>保存后下一次刷新会参与后端评分</span>
+            <h2 id="user-profile-title">Legacy user-profile.yml</h2>
+            <span>仅保留一个发布周期；不会导入或覆盖真实 ProfileStore</span>
           </div>
           <button class="user-md-close" id="close-user-profile" type="button" aria-label="关闭">×</button>
         </header>
@@ -102,11 +114,11 @@
             <dl>
               <div>
                 <dt>后端评分</dt>
-                <dd>保存到 config/user-profile.yml。</dd>
+                <dd>仅保存 legacy compatibility 文件。</dd>
               </div>
               <div>
                 <dt>刷新生效</dt>
-                <dd>下一次刷新会读取这份 YAML。</dd>
+                <dd>仅在 FI_L4_LEGACY_FALLBACK=1 时读取。</dd>
               </div>
               <div>
                 <dt>格式要求</dt>
@@ -133,7 +145,7 @@
         <header class="folder-expanded-header">
           <div>
             <h2 id="folder-title">信息源</h2>
-            <span id="folder-subtitle">启用状态会写入 config/sources.yml</span>
+            <span id="folder-subtitle">默认由 SQLite SourceCatalog 管理</span>
           </div>
           <button class="folder-close" id="close-folder" type="button" aria-label="关闭">×</button>
         </header>
@@ -141,15 +153,15 @@
         <section class="source-config-panel" id="source-config-panel" hidden>
           <header>
             <h3>config/sources.yml</h3>
-            <span>保存后下一次刷新会读取新的已启用 RSS 来源</span>
+            <span>显式 semantic import；不会把运行状态写回 YAML</span>
           </header>
           <textarea id="source-config-text" spellcheck="false"></textarea>
         </section>
         <footer class="folder-expanded-footer">
-          <span id="folder-status">刷新会读取 config/sources.yml 中已启用的 RSS 来源</span>
+          <span id="folder-status">当前来源状态由 SourceCatalog 管理</span>
           <div class="folder-actions">
-            <button class="folder-reset" id="edit-source-config" type="button">编辑 sources.yml</button>
-            <button class="folder-reset" id="save-source-config" type="button" hidden>保存 sources.yml</button>
+            <button class="folder-reset" id="edit-source-config" type="button">导入 legacy sources.yml</button>
+            <button class="folder-reset" id="save-source-config" type="button" hidden>执行 semantic import</button>
             <button class="folder-reset" id="reset-source-library" type="button">重新读取配置</button>
           </div>
         </footer>

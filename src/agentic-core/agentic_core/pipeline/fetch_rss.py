@@ -141,7 +141,14 @@ def fetch_source(source: dict[str, Any], rules: dict[str, Any], context: dict[st
         return response
     try:
         xml, http_response = fetch_xml(connection["rss_url"], source.get("timeout_seconds") or rules.get("fetch", {}).get("timeout_seconds") or 20, rules.get("fetch", {}).get("user_agent"))
-        items, metadata = parse_feed(xml, source_id, context.get("max_items") or rules.get("fetch", {}).get("max_items_per_source") or 50)
+        items, metadata = parse_feed(
+            xml,
+            source_id,
+            source.get("max_items")
+            or context.get("max_items")
+            or rules.get("fetch", {}).get("max_items_per_source")
+            or 50,
+        )
         response.update({"status": "ok", "items": items, "raw_feed_metadata": {k: v for k, v in metadata.items() if v is not None}})
         rate_limit = {}
         for header, key in [("x-ratelimit-limit", "limit"), ("x-ratelimit-remaining", "remaining"), ("x-ratelimit-reset", "reset_at"), ("retry-after", "retry_after_seconds")]:

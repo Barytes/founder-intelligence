@@ -1,0 +1,16 @@
+# Example shape only. This file is never imported as a real user's profile.
+version: 1
+
+active_goals:
+  - Replace this with an explicit current goal
+
+interests:
+  - Replace this with an explicitly stated interest
+
+watch_entities: []
+negative_preferences: []
+open_questions: []
+
+output_preferences:
+  language: zh-CN
+  default_top_n: 10

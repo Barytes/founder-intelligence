@@ -1,0 +1,33 @@
+{
+  "contract_version": 1,
+  "events": [
+    {
+      "event_id": "event-explicit-goal-1",
+      "user_id": "fixture-user",
+      "event_type": "user_statement",
+      "occurred_at": "2026-07-12T00:00:00Z",
+      "captured_at": "2026-07-12T00:00:01Z",
+      "payload": {
+        "text": "I am validating a developer tool and currently care about agent reliability and context infrastructure."
+      },
+      "origin": "test_fixture",
+      "explicitness": "explicit",
+      "confidence": 1.0,
+      "supersedes_event_ids": []
+    },
+    {
+      "event_id": "event-correction-2",
+      "user_id": "fixture-user",
+      "event_type": "profile_correction",
+      "occurred_at": "2026-07-12T00:10:00Z",
+      "captured_at": "2026-07-12T00:10:01Z",
+      "payload": {
+        "text": "Consumer entertainment trends are not relevant to this project."
+      },
+      "origin": "test_fixture",
+      "explicitness": "explicit",
+      "confidence": 1.0,
+      "supersedes_event_ids": []
+    }
+  ]
+}

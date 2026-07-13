@@ -33,6 +33,7 @@ def _resolve_config_path(raw_path: str) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    core: AgenticCore | None = None
     try:
         config_path = _resolve_config_path(args.config)
         core = AgenticCore.from_config(config_path)
@@ -54,6 +55,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 1
+    finally:
+        if core is not None:
+            close = getattr(core, "close", None)
+            if callable(close):
+                close()
 
     print(json.dumps(result.model_dump(), ensure_ascii=False, indent=2))
     return 0 if result.status == "ok" else 1

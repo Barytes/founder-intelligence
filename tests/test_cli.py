@@ -27,6 +27,7 @@ def test_parse_args_requires_prompt():
 
 def test_main_returns_ok_result(monkeypatch, capsys):
     fake_result = RunResult(status="ok", messages=[], final_text="ok")
+    lifecycle = {"closed": False}
 
     class FakeCore:
         @classmethod
@@ -36,6 +37,9 @@ def test_main_returns_ok_result(monkeypatch, capsys):
         def run(self, **_kwargs):
             return fake_result
 
+        def close(self):
+            lifecycle["closed"] = True
+
     monkeypatch.setattr(cli, "AgenticCore", FakeCore)
 
     exit_code = cli.main(["--prompt", "hello"])
@@ -44,6 +48,7 @@ def test_main_returns_ok_result(monkeypatch, capsys):
 
     assert exit_code == 0
     assert payload["status"] == "ok"
+    assert lifecycle["closed"] is True
 
 
 def test_main_handles_init_errors(monkeypatch, capsys):
@@ -61,6 +66,30 @@ def test_main_handles_init_errors(monkeypatch, capsys):
     assert exit_code == 1
     assert payload["status"] == "error"
     assert "missing config" in payload["errors"][0]
+
+
+def test_main_closes_core_when_run_fails(monkeypatch, capsys):
+    lifecycle = {"closed": False}
+
+    class FakeCore:
+        @classmethod
+        def from_config(cls, _config):
+            return cls()
+
+        def run(self, **_kwargs):
+            raise RuntimeError("model failed")
+
+        def close(self):
+            lifecycle["closed"] = True
+
+    monkeypatch.setattr(cli, "AgenticCore", FakeCore)
+
+    exit_code = cli.main(["--prompt", "hello"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert payload["errors"] == ["model failed"]
+    assert lifecycle["closed"] is True
 
 
 def test_main_rejects_outside_repo_config_path(monkeypatch, tmp_path, capsys):

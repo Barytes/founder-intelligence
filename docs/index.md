@@ -1,46 +1,30 @@
 # Documentation Index
 
-Start here when working on this repository.
+Start here for current repository truth.
 
-## Primary Documents
+## Current implementation
 
-- [Current Runtime Architecture](current-demo-architecture.md): explains the current RSS-only pipeline, Web app wrapper, runtime boundaries, and workflow.
-- [Current Web App Architecture](web-app/architecture.md): explains the implemented FastAPI local Web app architecture, routes, frontend data flow, refresh runner, and runtime boundaries.
-- [YAML Deterministic Pipeline](yaml-deterministic-pipeline.md): explains how YAML configuration drives the deterministic pipeline, what each YAML file does, and how each one participates in code flow.
-- [Agent Core](agent-core/index.md): explains the implemented Agentic Core architecture, runtime flow, configuration model, workbench, and known risks.
-- [L3-L4-L5 Agentic Roadmap](agent-roadmap/l3-l4-l5-roadmap.md): explains the staged path from tool contracts to fixed agent workflow to agentic controller.
-- [L3 Tool Contract Architecture](agent-roadmap/l3-tool-contract-architecture.md): defines the L3 tool boundary, contracts, permissions, and L4/L5 extension path.
-- [L3 Tool Contract Implementation Plan](agent-roadmap/l3-tool-contract-implementation-plan.md): provides the executable implementation plan for controlled L3 runtime tools.
-- [L3 Tool Contract Evaluation Plan](agent-roadmap/l3-tool-contract-evaluation-plan.md): defines acceptance gates, reward-hack checks, and verification commands for L3.
-- [L3 Tool Contract Pressure Test](agent-roadmap/l3-tool-contract-pressure-test.md): records plan vulnerabilities found and the design revisions that close them.
-- [L3.5 Python Pipeline Migration Plan](agent-roadmap/l3-5-python-pipeline-migration-plan.md): explains how to replace the transitional Ruby wrapper with a Python-native pipeline while preserving L3 tool contracts.
+- [Current Runtime Architecture](current-demo-architecture.md): the default L4 profile-driven workflow and its rollback path.
+- [Web App Architecture](web-app/architecture.md): FastAPI routes, current three-column dashboard, Inbox, Inspector and same-origin policy.
+- [Agent Core](agent-core/index.md): the PydanticAI runtime boundary and bounded Agent nodes.
+- [Fetcher Adapters](fetcher-adapters.md): SourceTarget/AcquisitionBinding and current connector capabilities.
+- [Ingestion](ingestion.md): canonical ingestion from connectors and Inbox.
+- [Signal Processing](signal-processing.md): deterministic baseline, candidate pool, evidence-backed Agent assessment and code-owned final score.
+- [Storage](storage.md): SQLite stores, immutable snapshots/traces and JSONL handoff artifacts.
+- [L3/L4/L5 Roadmap](agent-roadmap/l3-l4-l5-roadmap.md): L4 is implemented; L5 remains future work.
 
-## Feature Documents
+## Current boundaries
 
-- [Web App Feature Docs](web-app/README.md): collects current architecture, issue, and verification documents for the implemented Web app.
-- [Current Web App Known Issues](web-app/current-demo-issues.md): records resolved issues, remaining limitations, and repair priorities.
-- [Web App Verification Guide](web-app/test-plan.md): defines automated checks, HTTP smoke, and real browser smoke for the current Web app.
+- L4 is the default path. `FI_L4_LEGACY_FALLBACK=1` restores the old YAML/deterministic path for one release.
+- `ProfileStore` is sourced from explicit `UserContextEvent` records. `config/user-profile.yml` is legacy compatibility only and is never imported as a real user.
+- SQLite `SourceCatalog` is the source of truth. `config/sources.yml` is a backed-up bootstrap/import artifact, not a bidirectional runtime registry.
+- SourceTarget identity is transport-independent. Implemented connectors are RSS, RSSHub and Inbox; arbitrary API/HTML/MCP/browser acquisition is not yet implemented.
+- Source discovery uses a provider-neutral SearchProvider and local validation. A candidate never becomes active directly from Agent output.
+- Agentic Core uses PydanticAI as its only model runtime. Workflow, repositories, connectors, validators and score policy remain framework-independent.
+- The dashboard keeps the existing three-column news presentation and exposes current-info input, Inbox share, tracking state, score provenance and degraded state.
 
-## Supporting Documents
+## Specifications and evidence
 
-- [Fetcher Adapters](fetcher-adapters.md): describes the fetcher/ingestion boundary and the RSS-first adapter design.
-- [Ingestion](ingestion.md): describes canonical item normalization and ingestion responsibilities.
-- [Signal Processing](signal-processing.md): describes deterministic signal matching, scoring, and dashboard generation.
-- [Storage](storage.md): describes local append-only JSONL storage.
+Implementation plans, milestone decisions, evaluation matrices and pressure tests live under `codex-workspace/docs/superpowers/` as required by the repository workspace policy.
 
-## Important Runtime Boundaries
-
-- Current implemented fetch path is RSS-only.
-- The current HTTP backend and RSS-only refresh pipeline are Python-native.
-- MCP/API/HTML source templates and contracts exist, but no runnable fetcher is implemented for them yet.
-- Schedule fields exist in configuration, but no scheduler consumes them yet.
-- `config/sources.yml` is the only source registry used by the main demo flow.
-- The Web app can edit `config/user-profile.yml` and `config/sources.yml`.
-- The settings page can write local secrets to `.env` and provider overrides to gitignored `config/agentic-core.local.yml`.
-- Other committed `config/` files remain manual unless a document or feature explicitly says otherwise.
-
-## Archive
-
-- [Archived Web App Refactor Plan](archive/web-app/refactor-plan.md): historical implementation plan for the Web app upgrade.
-- [Archived Architecture Pressure Test](archive/web-app/pressure-test.md): historical pressure-test notes for the refactor plan.
-- [Archived Test Plan Pressure Test](archive/web-app/test-plan-pressure-test.md): historical audit of the old test plan.
+Historical plans that describe Ruby refresh, YAML as current source of truth, RSS as the product identity, or L4 as a terminal briefing should not be used as current implementation documentation.

@@ -1,23 +1,52 @@
 from pathlib import Path
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 import json
 import os
 import re
 import subprocess
+from threading import RLock
 from typing import Any
 from urllib.parse import urlparse
+from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
+from pydantic import BaseModel, ConfigDict, Field
 import yaml
 
 from agentic_core import AgenticCore
 from agentic_core.config import load_agentic_config
+from agentic_core.feature_flags import L4FeatureFlags, load_l4_feature_flags
+from agentic_core.l4.agents.profile_compiler import (
+    ProfileCompilationError,
+    ProfileCompiler,
+    ProfileService,
+)
+from agentic_core.l4.connectors.inbox import InboxService
+from agentic_core.l4.database import Database
+from agentic_core.l4.domain import (
+    ContextEventType,
+    Explicitness,
+    UserContextEvent,
+)
+from agentic_core.l4.hashing import idempotency_key
+from agentic_core.l4.inspector import WorkflowInspector
+from agentic_core.l4.repositories import (
+    ContextEventRepository,
+    InboxRepository,
+    ProfileRepository,
+    SourceRepository,
+    RuntimeControlRepository,
+)
+from agentic_core.l4.source_catalog import SourceCatalog
 from agentic_core.pipeline.runner import PipelineRunner
+from agentic_core.runtime.pydantic_ai_runtime import PydanticAIRuntime
 from agentic_core.schemas import AgenticConfig, ProviderProfileConfig
+from agentic_core.tools.registry import ToolRegistry
 from web_workbench.dashboard_repository import DashboardRepository
 
 
@@ -46,6 +75,14 @@ async def _lifespan(application: FastAPI):
     if getattr(application.state, "auto_start_rsshub", False):
         application.state.rsshub_start_result = ensure_rsshub(application.state.dashboard_root)
     yield
+    service = getattr(application.state, "profile_service", None)
+    runtime = getattr(getattr(service, "compiler", None), "runtime", None)
+    if runtime is not None:
+        runtime.close()
+    if getattr(application.state, "owns_l4_database", False):
+        database = getattr(application.state, "l4_database", None)
+        if database is not None:
+            database.close()
 
 
 app = FastAPI(title="Founder Intelligence Agentic Core Workbench", lifespan=_lifespan)
@@ -61,19 +98,58 @@ def create_app(
     runner: Any | None = None,
     allowed_origins: list[str] | tuple[str, ...] | None = None,
     auto_start_rsshub: bool | None = None,
+    l4_feature_flags: L4FeatureFlags | None = None,
+    l4_database: Database | None = None,
+    profile_service: ProfileService | None = None,
+    inbox_service: InboxService | None = None,
+    source_discovery_service: Any | None = None,
+    ranking_service: Any | None = None,
+    workflow_repository: Any | None = None,
 ) -> FastAPI:
     root = Path(repo_root or REPO_ROOT).resolve()
     dashboard_public_dir = root / "src/web/public"
     origin_values = allowed_origins or _allowed_origins_from_env() or DEFAULT_ALLOWED_ORIGINS
+    flags = l4_feature_flags or load_l4_feature_flags()
+    runner_profile_repository = (
+        ProfileRepository(l4_database)
+        if l4_database is not None and flags.profile_enabled
+        else None
+    )
+    runner_source_catalog = (
+        SourceCatalog(l4_database)
+        if l4_database is not None and flags.source_catalog_enabled
+        else None
+    )
     app.state.dashboard_root = root
     app.state.dashboard_public_dir = dashboard_public_dir if dashboard_public_dir.exists() else DASHBOARD_PUBLIC_DIR
-    app.state.dashboard_runner = runner or PipelineRunner(root=root)
+    app.state.dashboard_runner = runner or PipelineRunner(
+        root=root,
+        l4_feature_flags=flags,
+        profile_repository=runner_profile_repository,
+        source_catalog=runner_source_catalog,
+        l4_database=l4_database,
+        profile_service=profile_service,
+        source_discovery_service=source_discovery_service,
+        ranking_service=ranking_service,
+        inbox_repository=(
+            InboxRepository(l4_database) if l4_database is not None else None
+        ),
+        workflow_repository=workflow_repository,
+    )
+    if profile_service is not None:
+        app.state.dashboard_runner.profile_service = profile_service
     app.state.auto_start_rsshub = (
         auto_start_rsshub
         if auto_start_rsshub is not None
         else _auto_start_rsshub_from_env()
     )
     app.state.rsshub_start_result = {"status": "disabled"}
+    app.state.l4_feature_flags = flags
+    app.state.l4_database = l4_database
+    app.state.l4_database_lock = RLock()
+    app.state.owns_l4_database = False
+    app.state.profile_service = profile_service
+    app.state.inbox_service = inbox_service
     app.state.allowed_origins = {
         normalized
         for normalized in (_normalize_origin(origin) for origin in origin_values)
@@ -95,7 +171,75 @@ def _allowed_origins_from_env() -> list[str]:
 
 
 def _dashboard_repository() -> DashboardRepository:
-    return DashboardRepository(root=app.state.dashboard_root)
+    catalog = (
+        SourceCatalog(_l4_database())
+        if app.state.l4_feature_flags.source_catalog_enabled
+        else None
+    )
+    return DashboardRepository(root=app.state.dashboard_root, source_catalog=catalog)
+
+
+def _l4_database() -> Database:
+    database = getattr(app.state, "l4_database", None)
+    if database is not None:
+        return database
+    lock = getattr(app.state, "l4_database_lock", None)
+    if lock is None:
+        lock = RLock()
+        app.state.l4_database_lock = lock
+    with lock:
+        database = getattr(app.state, "l4_database", None)
+        if database is None:
+            database = Database(
+                Path(app.state.dashboard_root) / "data/app/founder-intelligence.db"
+            )
+            app.state.l4_database = database
+            app.state.owns_l4_database = True
+    return database
+
+
+def _context_event_repository() -> ContextEventRepository:
+    return ContextEventRepository(_l4_database())
+
+
+def _profile_repository() -> ProfileRepository:
+    return ProfileRepository(_l4_database())
+
+
+def _profile_service() -> ProfileService:
+    service = getattr(app.state, "profile_service", None)
+    if service is not None:
+        return service
+    config = load_agentic_config(DEFAULT_CONFIG, local_config_path=LOCAL_CONFIG)
+    runtime = PydanticAIRuntime(
+        config=config,
+        tools=ToolRegistry(),
+    )
+    profiles = _profile_repository()
+    service = ProfileService(
+        events=_context_event_repository(),
+        profiles=profiles,
+        compiler=ProfileCompiler(
+            repository=profiles,
+            runtime=runtime,
+            model_id=config.provider.model,
+        ),
+    )
+    app.state.profile_service = service
+    app.state.dashboard_runner.profile_service = service
+    return service
+
+
+def _inbox_service() -> InboxService:
+    service = getattr(app.state, "inbox_service", None)
+    if service is None:
+        database = _l4_database()
+        service = InboxService(
+            inbox=InboxRepository(database),
+            sources=SourceRepository(database),
+        )
+        app.state.inbox_service = service
+    return service
 
 
 def _dashboard_public_path(name: str) -> Path:
@@ -121,7 +265,7 @@ def _request_origin(request: Request) -> str | None:
 def _same_origin(request: Request) -> bool:
     origin = request.headers.get("origin")
     if not origin:
-        return True
+        return False
     normalized = _normalize_origin(origin)
     return bool(
         normalized
@@ -194,6 +338,47 @@ class ProviderSettingsRequest(BaseModel):
 
 class EnvSettingsRequest(BaseModel):
     github_token: str | None = None
+
+
+class ContextEventRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: str = "local-user"
+    event_id: str | None = None
+    event_type: ContextEventType
+    payload: dict[str, Any]
+    origin: str = "web"
+    occurred_at: datetime | None = None
+    supersedes_event_ids: tuple[str, ...] = ()
+    idempotency_key: str | None = None
+
+
+class InboxItemRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: str = "local-user"
+    inbox_item_id: str | None = None
+    url: str
+    title: str | None = None
+    note: str | None = None
+    captured_content: str | None = None
+
+
+class InspectorProfileRollbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    user_id: str = "local-user"
+    profile_id: str
+
+
+class InspectorSourceRollbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scope_id: str = "local-user"
+    snapshot_id: str
+
+
+class RuntimeControlRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
 
 
 def _error_result(error: str) -> dict[str, Any]:
@@ -470,6 +655,14 @@ def settings_index():
     }
 
 
+@app.get("/inspector", response_model=None)
+def inspector_index():
+    inspector_file = STATIC_DIR / "inspector.html"
+    if inspector_file.exists():
+        return FileResponse(inspector_file)
+    return {"status": "missing_ui", "message": "Inspector UI is missing."}
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -512,6 +705,199 @@ def latest_run() -> dict[str, Any]:
 @app.get("/api/refresh/status")
 def refresh_status() -> dict[str, Any]:
     return _dashboard_repository().refresh_status()
+
+
+@app.get("/api/inspector/runs")
+def inspector_runs(limit: int = 100) -> dict[str, Any]:
+    return WorkflowInspector(_l4_database()).list_runs(limit=max(1, min(limit, 500)))
+
+
+@app.get("/api/inspector/runs/{run_id}")
+def inspector_run(run_id: str):
+    result = WorkflowInspector(_l4_database()).run_detail(run_id)
+    if result is None:
+        return JSONResponse({"status": "not_found"}, status_code=404)
+    return result
+
+
+@app.post("/api/inspector/runs/{run_id}/replay")
+def inspector_replay(run_id: str, request: Request):
+    if not _same_origin(request):
+        return JSONResponse({"status": "forbidden"}, status_code=403)
+    result = WorkflowInspector(_l4_database()).replay(run_id)
+    if result is None:
+        return JSONResponse({"status": "not_found"}, status_code=404)
+    return result
+
+
+@app.post("/api/inspector/rollback/profile")
+def inspector_rollback_profile(request: Request, payload: InspectorProfileRollbackRequest):
+    if not _same_origin(request):
+        return JSONResponse({"status": "forbidden"}, status_code=403)
+    try:
+        return WorkflowInspector(_l4_database()).rollback_profile(
+            payload.user_id, payload.profile_id
+        )
+    except Exception as exc:
+        return JSONResponse({"status": "error", "errors": [str(exc)]}, status_code=400)
+
+
+@app.post("/api/inspector/rollback/source")
+def inspector_rollback_source(request: Request, payload: InspectorSourceRollbackRequest):
+    if not _same_origin(request):
+        return JSONResponse({"status": "forbidden"}, status_code=403)
+    try:
+        return WorkflowInspector(_l4_database()).rollback_source_snapshot(
+            payload.scope_id, payload.snapshot_id
+        )
+    except Exception as exc:
+        return JSONResponse({"status": "error", "errors": [str(exc)]}, status_code=400)
+
+
+@app.post("/api/inspector/controls/{stage}")
+def inspector_control(stage: str, request: Request, payload: RuntimeControlRequest):
+    if not _same_origin(request):
+        return JSONResponse({"status": "forbidden"}, status_code=403)
+    try:
+        control = RuntimeControlRepository(_l4_database()).set_enabled(
+            stage, payload.enabled
+        )
+    except Exception as exc:
+        return JSONResponse({"status": "error", "errors": [str(exc)]}, status_code=400)
+    return {"status": "saved", "control": control}
+
+
+@app.post("/api/context/events")
+def create_context_event(request: Request, payload: ContextEventRequest):
+    if not _same_origin(request):
+        return JSONResponse({"status": "forbidden"}, status_code=403)
+    if payload.event_type == ContextEventType.PASSIVE_BEHAVIOR:
+        return JSONResponse(
+            {
+                "status": "bad_request",
+                "message": "Passive behavior inference is not enabled.",
+            },
+            status_code=400,
+        )
+    event_id = payload.event_id or f"event-{uuid4()}"
+    event = UserContextEvent(
+        event_id=event_id,
+        user_id=payload.user_id,
+        event_type=payload.event_type,
+        payload=payload.payload,
+        origin=payload.origin,
+        explicitness=Explicitness.EXPLICIT,
+        occurred_at=payload.occurred_at or datetime.now(timezone.utc),
+        supersedes_event_ids=payload.supersedes_event_ids,
+        idempotency_key=payload.idempotency_key or f"context:v1:{event_id}",
+    )
+    try:
+        saved = _context_event_repository().append(event)
+    except Exception as exc:
+        return JSONResponse(
+            {"status": "error", "errors": [str(exc)]}, status_code=409
+        )
+
+    response: dict[str, Any] = {
+        "status": "accepted",
+        "event": saved.model_dump(mode="json"),
+        "profile_status": "disabled",
+        "profile": None,
+        "errors": [],
+    }
+    if app.state.l4_feature_flags.profile_enabled:
+        try:
+            compiled = _profile_service().compile_current(payload.user_id)
+            response.update(
+                {
+                    "status": "compiled",
+                    "profile_status": "active",
+                    "profile": compiled.snapshot.model_dump(mode="json"),
+                    "profile_audit": compiled.audit.model_dump(mode="json"),
+                }
+            )
+        except (ProfileCompilationError, ValueError, RuntimeError) as exc:
+            active = _profile_repository().get_active(payload.user_id)
+            response.update(
+                {
+                    "status": "accepted_degraded",
+                    "profile_status": "compile_failed",
+                    "profile": active.model_dump(mode="json") if active else None,
+                    "errors": [str(exc)],
+                }
+            )
+    return response
+
+
+@app.get("/api/context/events")
+def context_events(user_id: str = "local-user") -> dict[str, Any]:
+    events = _context_event_repository().list_for_user(user_id)
+    return {
+        "status": "ok",
+        "user_id": user_id,
+        "events": [event.model_dump(mode="json") for event in events],
+    }
+
+
+@app.get("/api/profile/current")
+def current_profile(user_id: str = "local-user") -> dict[str, Any]:
+    snapshot = _profile_repository().get_active(user_id)
+    effective = _profile_repository().resolve_effective_profile(user_id)
+    return {
+        "status": "ok",
+        "profile_status": "active" if snapshot else "uninitialized",
+        "snapshot": snapshot.model_dump(mode="json") if snapshot else None,
+        "effective_profile": effective.model_dump(mode="json"),
+    }
+
+
+@app.get("/api/profile/history")
+def profile_history(user_id: str = "local-user") -> dict[str, Any]:
+    snapshots = _profile_repository().history(user_id)
+    return {
+        "status": "ok",
+        "user_id": user_id,
+        "profiles": [snapshot.model_dump(mode="json") for snapshot in snapshots],
+    }
+
+
+@app.post("/api/inbox/items")
+def create_inbox_item(request: Request, payload: InboxItemRequest):
+    if not _same_origin(request):
+        return JSONResponse({"status": "forbidden"}, status_code=403)
+    if not app.state.l4_feature_flags.inbox_enabled:
+        return JSONResponse(
+            {"status": "disabled", "message": "L4 Inbox is disabled."},
+            status_code=409,
+        )
+    try:
+        item = _inbox_service().submit(
+            user_id=payload.user_id,
+            url=payload.url,
+            title=payload.title,
+            note=payload.note,
+            captured_content=payload.captured_content,
+            inbox_item_id=payload.inbox_item_id,
+        )
+    except (ValueError, RuntimeError) as exc:
+        return JSONResponse(
+            {"status": "error", "errors": [str(exc)]}, status_code=400
+        )
+    return {
+        "status": "saved",
+        "item": item.model_dump(mode="json"),
+        "errors": [],
+    }
+
+
+@app.get("/api/inbox/items")
+def inbox_items(user_id: str = "local-user") -> dict[str, Any]:
+    items = InboxRepository(_l4_database()).list_for_user(user_id)
+    return {
+        "status": "ok",
+        "user_id": user_id,
+        "items": [item.model_dump(mode="json") for item in items],
+    }
 
 
 @app.get("/api/profile")
@@ -571,7 +957,7 @@ async def refresh(request: Request):
             {"status": "bad_request", "message": "Refresh does not accept command parameters."},
             status_code=400,
         )
-    result = app.state.dashboard_runner.refresh()
+    result = await run_in_threadpool(app.state.dashboard_runner.refresh)
     return JSONResponse(result, status_code=409 if result.get("status") == "already_running" else 200)
 
 
@@ -590,6 +976,7 @@ def default_config() -> dict[str, Any]:
         "agent": config.agent.model_dump(),
         "tools": {name: tool.model_dump() for name, tool in config.tools.items()},
         "paths": {key: str(value) for key, value in config.paths.model_dump().items()},
+        "l4_feature_flags": app.state.l4_feature_flags.model_dump(),
     }
 
 
@@ -779,11 +1166,14 @@ def save_provider_settings(request: Request, settings: ProviderSettingsRequest):
 
 @app.post("/api/agent/chat")
 @app.post("/api/chat")
-def chat(request: ChatRequest) -> dict[str, Any]:
+def chat(http_request: Request, request: ChatRequest) -> dict[str, Any]:
+    if not _same_origin(http_request):
+        return JSONResponse({"status": "forbidden"}, status_code=403)
     resolved_path, error = _resolve_config_path(request.config_path)
     if error is not None:
         return _error_result(error)
 
+    core: AgenticCore | None = None
     try:
         core = AgenticCore.from_config(resolved_path)
         result = core.run(
@@ -793,6 +1183,11 @@ def chat(request: ChatRequest) -> dict[str, Any]:
         return result.model_dump()
     except Exception as exc:
         return _error_result(str(exc))
+    finally:
+        if core is not None:
+            close = getattr(core, "close", None)
+            if callable(close):
+                close()
 
 
 create_app()

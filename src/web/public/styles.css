@@ -138,8 +138,15 @@ textarea {
 }
 
 .grid > .panel:first-child {
-  display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  display: block;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.grid > .panel:first-child > .panel-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
 }
 
 .panel-header {
@@ -322,7 +329,7 @@ textarea {
   background:
     radial-gradient(circle at 12% 10%, rgba(255, 255, 255, 0.7), transparent 36%),
     rgba(255, 250, 241, 0.38);
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .source-folders-head {
@@ -1268,6 +1275,32 @@ textarea {
   line-height: 1.45;
 }
 
+.agent-dimensions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.agent-dimensions span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft, #f7f7f4);
+}
+
+.agent-evidence ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.agent-evidence li {
+  margin: 6px 0;
+}
+
 .trace {
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -1567,6 +1600,50 @@ textarea {
   .source-folder-list {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+}
+
+.context-capture {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.context-capture label {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.context-capture textarea,
+.context-capture input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px;
+  color: var(--ink);
+  background: var(--paper);
+  font: inherit;
+  font-size: 12px;
+}
+
+.context-capture button {
+  border: 0;
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: white;
+  background: var(--ink);
+  cursor: pointer;
+}
+
+.context-capture span {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 @media (max-width: 520px) {

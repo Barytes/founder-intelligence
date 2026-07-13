@@ -25,7 +25,7 @@ L3 要让 Agentic Core 获得这些能力：
 
 ## 当前能力分布
 
-当前 Ruby 主流程是：
+当前 Python 主流程是：
 
 ```text
 src/agentic-core/agentic_core/pipeline/runner.py
@@ -41,8 +41,11 @@ src/agentic-core/agentic_core/pipeline/runner.py
 ```text
 src/agentic-core/agentic_core/
   core.py
+  runtime/pydantic_ai_runtime.py
   tools/registry.py
   tools/founder_tools.py
+  tools/runtime_tools.py
+  tools/pipeline_tools.py
 ```
 
 已有工具：
@@ -50,10 +53,13 @@ src/agentic-core/agentic_core/
 ```text
 read_signals
 read_canonical_items
+read_refresh_status
+read_latest_run
+run_refresh_pipeline
 write_agentic_artifact
 ```
 
-这些工具证明了 tool-calling loop 可运行，但工具面还不足以支撑 L4/L5，因为 Agent 还不能观察 refresh 状态或触发受控 pipeline。
+这些工具已经让 PydanticAI Agentic Core 能观察 refresh 状态并触发受控 Python `PipelineRunner`。L3 工具边界已实现；L4/L5 仍需在其上增加固定 workflow、状态模型和更高层 controller，而不是扩大成任意执行权限。
 
 ## 新架构
 

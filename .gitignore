@@ -5,7 +5,6 @@ config/agentic-core.local.yml
 __pycache__/
 *.pyc
 *.egg-info/
-uv.lock
 Git_Trending.rtf
 data/adapter-output/*.json
 data/canonical-items/*.json

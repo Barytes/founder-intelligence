@@ -1,0 +1,26 @@
+:root { color-scheme: light; --ink:#1f2933; --muted:#66737f; --line:#d8dee4; --paper:#f7f4ed; --accent:#1c6b57; }
+* { box-sizing:border-box; }
+body { margin:0; color:var(--ink); background:var(--paper); font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.inspector-header { display:flex; justify-content:space-between; gap:24px; padding:22px 28px; border-bottom:1px solid var(--line); background:#fff; }
+h1,h2,h3,p { margin:0; } h1 { font-size:24px; } h2 { font-size:15px; } h3 { margin-bottom:10px; font-size:12px; text-transform:uppercase; color:var(--muted); }
+nav { display:flex; gap:14px; align-items:center; } a { color:var(--accent); }
+.inspector-layout { display:grid; grid-template-columns:320px minmax(0,1fr); min-height:calc(100vh - 86px); }
+.run-list-panel { padding:18px; border-right:1px solid var(--line); background:#fcfbf8; }
+.run-list-panel>header,.run-detail-panel>header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; }
+button { border:1px solid var(--line); border-radius:8px; padding:7px 10px; background:#fff; cursor:pointer; }
+button:disabled { opacity:.45; cursor:not-allowed; }
+.runs,.controls { display:grid; gap:8px; margin-bottom:16px; }
+.run-button { width:100%; text-align:left; padding:10px; }
+.run-button strong,.run-button span { display:block; overflow:hidden; text-overflow:ellipsis; }
+.run-button span { margin-top:4px; color:var(--muted); font-size:11px; }
+.control-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px dotted var(--line); }
+.run-detail-panel { padding:20px; min-width:0; }
+.timeline { display:flex; gap:6px; overflow:auto; padding-bottom:14px; }
+.step { min-width:118px; padding:8px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+.step b,.step span { display:block; } .step span { margin-top:4px; color:var(--muted); font-size:10px; }
+.step.degraded,.step.failed { border-color:#b24a3a; }
+.detail-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.detail-grid section { min-width:0; padding:14px; border:1px solid var(--line); border-radius:10px; background:#fff; }
+pre { max-height:360px; overflow:auto; margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; }
+.status { position:fixed; right:18px; bottom:18px; max-width:440px; padding:8px 12px; border:1px solid var(--line); background:#fff; }
+@media (max-width:900px) { .inspector-layout { grid-template-columns:1fr; } .run-list-panel { border-right:0; border-bottom:1px solid var(--line); } .detail-grid { grid-template-columns:1fr; } }

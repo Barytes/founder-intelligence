@@ -121,7 +121,7 @@ Countermeasure：
 
 - Check `config/agentic-core.example.yml` includes enabled entries.
 
-### A5: Existing Agentic Core loop still works
+### A5: PydanticAI Agentic Core contract still works
 
 Evidence：
 
@@ -132,7 +132,7 @@ uv run --extra dev pytest tests/test_workbench_api.py -q
 
 Pass condition：
 
-- Tool-calling loop still records tool calls。
+- PydanticAI runtime records tool calls through `ToolRegistry`。
 - Tool errors are surfaced as tool messages。
 - Artifact paths are still aggregated。
 - Workbench chat still calls Agentic Core.

@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 from web_workbench.app import create_app, ensure_rsshub
@@ -31,6 +32,20 @@ def test_dashboard_and_agent_pages_are_served_by_one_fastapi_app(tmp_path):
     assert "Agentic Core" in agent.text
     assert 'href="/"' in agent.text
     assert "/agent/static/app.js" in agent.text
+    assert 'id="context-input"' in dashboard.text
+    assert 'id="inbox-url"' in dashboard.text
+    assert 'href="/inspector"' in dashboard.text
+
+    inspector = client.get("/inspector")
+    assert inspector.status_code == 200
+    assert "L4 Run Inspector" in inspector.text
+
+    dashboard_script = client.get("/app.js")
+    assert dashboard_script.status_code == 200
+    assert "Agent 新闻判断" in dashboard_script.text
+    assert "reasoning_summary" in dashboard_script.text
+    assert "evidence_spans" in dashboard_script.text
+    assert "rank_delta" in dashboard_script.text
 
 
 def test_dashboard_apis_preserve_existing_web_app_contract(tmp_path):
@@ -91,6 +106,44 @@ def test_refresh_enforces_same_origin_and_rejects_command_parameters(tmp_path):
     assert accepted.status_code == 200
     assert accepted.json()["status"] == "started"
     assert runner.calls == 1
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("PUT", "/api/profile", {"content": "version: 1"}),
+        ("PUT", "/api/sources", {"content": "version: 1"}),
+        ("POST", "/api/sources/github-trending-daily", {"enabled": False}),
+        ("PATCH", "/api/sources/github-trending-daily", {"enabled": False}),
+        ("POST", "/api/refresh", {}),
+        ("PUT", "/api/settings/env", {"github_token": "test"}),
+        ("POST", "/api/provider-settings", {"model": "test"}),
+        ("POST", "/api/agent/provider-settings", {"model": "test"}),
+        ("POST", "/api/chat", {"message": "test"}),
+        ("POST", "/api/agent/chat", {"message": "test"}),
+        (
+            "POST",
+            "/api/context/events",
+            {"event_type": "user_statement", "payload": {"text": "test"}},
+        ),
+        ("POST", "/api/inbox/items", {"url": "https://example.com/item"}),
+        ("POST", "/api/inspector/runs/missing/replay", {}),
+        ("POST", "/api/inspector/rollback/profile", {"profile_id": "missing"}),
+        ("POST", "/api/inspector/rollback/source", {"snapshot_id": "missing"}),
+        ("POST", "/api/inspector/controls/agent_ranking", {"enabled": False}),
+    ],
+)
+def test_mutating_endpoints_reject_requests_without_origin(
+    tmp_path, method, path, payload
+):
+    write_repo_fixture(tmp_path)
+    runner = FakeRunner()
+    client = TestClient(create_app(repo_root=tmp_path, runner=runner))
+
+    response = client.request(method, path, json=payload)
+
+    assert response.status_code == 403
+    assert runner.calls == 0
 
 
 def test_refresh_accepts_current_request_origin_on_non_default_port(tmp_path):

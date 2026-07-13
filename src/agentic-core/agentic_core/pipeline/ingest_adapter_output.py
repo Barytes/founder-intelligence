@@ -233,9 +233,21 @@ def validate_output(output: dict[str, Any], rules: dict[str, Any]) -> None:
             raise RuntimeError(f"canonical item {index} missing dedupe_key")
 
 
-def run(input_path: Path, sources_path: Path, rules_path: Path, output_path: Path) -> dict[str, Any]:
+def run(
+    input_path: Path,
+    sources_path: Path | None,
+    rules_path: Path,
+    output_path: Path,
+    *,
+    sources_override: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     adapter_output = json.loads(input_path.read_text(encoding="utf-8"))
-    sources_config = yaml.safe_load(sources_path.read_text(encoding="utf-8"))
+    if sources_override is not None:
+        sources_config = sources_override
+    elif sources_path is not None:
+        sources_config = yaml.safe_load(sources_path.read_text(encoding="utf-8"))
+    else:
+        raise ValueError("sources_path or sources_override is required")
     rules = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
     output = ingest(adapter_output, sources_config, rules)
     validate_output(output, rules)

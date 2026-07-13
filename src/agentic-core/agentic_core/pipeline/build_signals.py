@@ -385,7 +385,8 @@ def risks_for(context: dict[str, Any], rules: dict[str, Any]) -> list[str]:
     return result[: rules.get("recommendation", {}).get("max_risks", 2)]
 
 
-def build_signal(item: dict[str, Any], profile: dict[str, Any], rules: dict[str, Any], now: datetime) -> dict[str, Any]:
+def compute_baseline_assessment(item: dict[str, Any], profile: dict[str, Any], rules: dict[str, Any], now: datetime) -> dict[str, Any]:
+    """Compute the version-1 deterministic assessment used by the current dashboard."""
     content_text = content_blob(item)
     full_text = "\n".join([content_text, metadata_blob(item)])
     matches = keyword_matches(content_text, rules)
@@ -430,6 +431,11 @@ def build_signal(item: dict[str, Any], profile: dict[str, Any], rules: dict[str,
     }
 
 
+def build_signal(item: dict[str, Any], profile: dict[str, Any], rules: dict[str, Any], now: datetime) -> dict[str, Any]:
+    """Compatibility name retained for callers of the pre-L4 scorer."""
+    return compute_baseline_assessment(item, profile, rules, now)
+
+
 def build_signals(canonical: dict[str, Any], profile: dict[str, Any], rules: dict[str, Any], top_n: int, now: datetime | None = None) -> list[dict[str, Any]]:
     now = now or datetime.now().astimezone()
     excluded_sources = listify(rules.get("filters", {}).get("excluded_sources"))
@@ -472,11 +478,33 @@ def html_dashboard(output: dict[str, Any]) -> str:
     return f"<!doctype html><html><head><meta charset=\"utf-8\"><title>Founder Daily Intelligence</title></head><body><h1>Founder Daily Intelligence</h1><p>推荐信号：{output['summary']['signals']}</p></body></html>\n"
 
 
-def run(input_path: Path, profile_path: Path, rules_path: Path, output_path: Path, markdown_path: Path | None = None, html_path: Path | None = None, top_n: int | None = None) -> dict[str, Any]:
+def run(
+    input_path: Path,
+    profile_path: Path | None,
+    rules_path: Path,
+    output_path: Path,
+    markdown_path: Path | None = None,
+    html_path: Path | None = None,
+    top_n: int | None = None,
+    *,
+    profile_override: dict[str, Any] | None = None,
+    profile_id: str | None = None,
+    profile_hash: str | None = None,
+    profile_status: str | None = None,
+) -> dict[str, Any]:
     canonical = json.loads(input_path.read_text(encoding="utf-8"))
-    profile = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
+    if profile_override is not None:
+        profile = profile_override
+    elif profile_path is not None:
+        profile = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
+    else:
+        profile = {}
     rules = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
     output = build_output(canonical, profile, rules, top_n=top_n)
+    if profile_status is not None:
+        output["profile_status"] = profile_status
+        output["profile_id"] = profile_id
+        output["profile_hash"] = profile_hash
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(output, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if markdown_path:

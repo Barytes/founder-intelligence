@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>L4 Run Inspector</title>
+    <link rel="stylesheet" href="/agent/static/inspector.css" />
+  </head>
+  <body>
+    <header class="inspector-header">
+      <div><small>Founder Intelligence / Developer</small><h1>L4 Run Inspector</h1></div>
+      <nav><a href="/">信号控制台</a><a href="/agent">Agent</a><a href="/settings">配置</a></nav>
+    </header>
+    <main class="inspector-layout">
+      <aside class="run-list-panel">
+        <header><h2>Workflow runs</h2><button id="reload" type="button">刷新</button></header>
+        <div id="controls" class="controls"></div>
+        <div id="runs" class="runs"></div>
+      </aside>
+      <section class="run-detail-panel">
+        <header><div><h2 id="run-title">选择一次运行</h2><p id="run-meta">不会展示 chain-of-thought。</p></div><button id="replay" type="button" disabled>离线 replay</button></header>
+        <div id="timeline" class="timeline"></div>
+        <div class="detail-grid">
+          <section><h3>Profile provenance</h3><pre id="profile">{}</pre></section>
+          <section><h3>Source discovery / lifecycle</h3><pre id="sources">{}</pre></section>
+          <section><h3>Baseline / Agent / final score</h3><pre id="scores">{}</pre></section>
+          <section><h3>Replay / usage / degraded reason</h3><pre id="audit">{}</pre></section>
+        </div>
+      </section>
+    </main>
+    <p id="status" class="status" role="status"></p>
+    <script src="/agent/static/inspector.js"></script>
+  </body>
+</html>

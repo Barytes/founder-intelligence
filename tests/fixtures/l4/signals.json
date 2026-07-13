@@ -1,0 +1,38 @@
+{
+  "contract_version": 1,
+  "generated_at": "2026-07-12T01:05:00Z",
+  "input_run_id": "canonical-fixture-run-1",
+  "profile_id": "profile-fixture-v1",
+  "profile_version": 1,
+  "rules_version": 1,
+  "summary": {
+    "input_items": 2,
+    "signals": 1,
+    "top_n": 10
+  },
+  "signals": [
+    {
+      "id": "item-relevant-1",
+      "title": "Agent runtime adds replayable execution traces",
+      "deterministic_importance_score": 4,
+      "deterministic_relevance_score": 5,
+      "agent_assessment": {
+        "agent_relevance": 5,
+        "novelty": 4,
+        "credibility": 3,
+        "urgency": 2,
+        "counter_signal": "The fixture does not establish production adoption.",
+        "evidence_spans": [
+          {
+            "field": "content",
+            "start": 0,
+            "end": 103
+          }
+        ]
+      },
+      "final_score": 4.35,
+      "score_policy_version": "hybrid-policy-fixture-v1",
+      "agent_status": "valid"
+    }
+  ]
+}

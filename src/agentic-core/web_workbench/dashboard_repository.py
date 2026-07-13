@@ -6,6 +6,9 @@ from urllib.parse import urlparse
 
 import yaml
 
+from agentic_core.l4.repositories import RepositoryError
+from agentic_core.l4.source_catalog import SourceCatalog, SourceCatalogError
+
 
 EMPTY_SIGNALS = {
     "status": "empty",
@@ -14,8 +17,14 @@ EMPTY_SIGNALS = {
 
 
 class DashboardRepository:
-    def __init__(self, root: Path | str):
+    def __init__(
+        self,
+        root: Path | str,
+        *,
+        source_catalog: SourceCatalog | None = None,
+    ):
         self.root = Path(root).resolve()
+        self.source_catalog = source_catalog
 
     def latest_signals(self) -> dict:
         path = self._path("data/signals/latest.json")
@@ -69,6 +78,8 @@ class DashboardRepository:
             return {
                 "path": "config/user-profile.yml",
                 "content": path.read_text(encoding="utf-8"),
+                "source_of_truth": "legacy_compatibility",
+                "message": "Effective profiles come from explicit context events in ProfileStore.",
             }
         except FileNotFoundError:
             return {
@@ -90,7 +101,12 @@ class DashboardRepository:
 
         normalized = content if content.endswith("\n") else f"{content}\n"
         self._write_file("config/user-profile.yml", normalized)
-        return {"status": "saved", "path": "config/user-profile.yml"}
+        return {
+            "status": "saved",
+            "path": "config/user-profile.yml",
+            "source_of_truth": "legacy_compatibility",
+            "message": "Saved only for one-release legacy fallback.",
+        }
 
     def sources(self) -> dict:
         path = self._path("config/sources.yml")
@@ -110,7 +126,14 @@ class DashboardRepository:
         return {
             "path": "config/sources.yml",
             "content": content,
-            "sources": self._source_rows(config),
+            "sources": (
+                self.source_catalog.source_rows()
+                if self.source_catalog is not None
+                else self._source_rows(config)
+            ),
+            "source_of_truth": (
+                "sqlite_catalog" if self.source_catalog is not None else "yaml"
+            ),
         }
 
     def update_sources(self, content: object) -> dict:
@@ -125,6 +148,20 @@ class DashboardRepository:
         if error:
             return {"status": "error", "message": error}
 
+        if self.source_catalog is not None:
+            try:
+                summary = self.source_catalog.import_yaml_text(content)
+            except SourceCatalogError as exc:
+                return {"status": "error", "message": str(exc)}
+            return {
+                "status": "saved",
+                "path": "config/sources.yml",
+                "content": self._path("config/sources.yml").read_text(encoding="utf-8"),
+                "sources": self.source_catalog.source_rows(),
+                "source_of_truth": "sqlite_catalog",
+                "import": summary.model_dump(mode="json"),
+            }
+
         normalized = content if content.endswith("\n") else f"{content}\n"
         self._write_file("config/sources.yml", normalized)
         return {
@@ -137,6 +174,19 @@ class DashboardRepository:
     def update_source_enabled(self, source_id: str, enabled: object) -> dict:
         if enabled not in {True, False}:
             return {"status": "error", "message": "enabled must be true or false."}
+
+        if self.source_catalog is not None:
+            try:
+                source = self.source_catalog.set_legacy_source_enabled(
+                    source_id, bool(enabled)
+                )
+            except RepositoryError:
+                return {"status": "not_found", "message": "Source not found."}
+            return {
+                "status": "saved",
+                "source": source,
+                "source_of_truth": "sqlite_catalog",
+            }
 
         try:
             config = self._sources_config()
@@ -333,4 +383,3 @@ class DashboardRepository:
         tmp_path = full_path.with_name(f"{full_path.name}.tmp")
         tmp_path.write_text(content, encoding="utf-8")
         tmp_path.replace(full_path)
-

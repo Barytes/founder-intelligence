@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "status": "migrated",
+  "dry_run": false,
+  "source_hash": "1103fec26251a2c461cce9588561b4807cd3850a75a6e8bf8abcbb3448921475",
+  "backup_path": "data/migrations/sources-1103fec26251a2c4.yml",
+  "source_import": {
+    "version": 1,
+    "import_id": "source-import-831ba483-a16b-4323-bcc8-575e986a03d0",
+    "source_hash": "59cba282aafad140a52ed2b52990a3b31afbcb5acfca123a623f3f480165eaf1",
+    "imported": false,
+    "dry_run": false,
+    "targets_created_or_updated": 4,
+    "bindings_created_or_updated": 4,
+    "templates_imported": 2,
+    "source_ids": [
+      "bilibili-popular-all",
+      "github-activity-diygod",
+      "github-trending-daily",
+      "zhihu-hot"
+    ]
+  },
+  "pre_migration_snapshot_id": "source-snapshot-pre-migration-1103fec26251a2c4",
+  "active_snapshot_id": "source-snapshot-migrated-1103fec26251a2c4",
+  "profile_imported": false,
+  "legacy_profile_path": "config/user-profile.yml",
+  "profile_example_path": "config/user-profile.example.yml",
+  "compatibility_fallback_env": "FI_L4_LEGACY_FALLBACK",
+  "migrated_at": "2026-07-12T14:43:50.609092Z",
+  "migration_id": "migration-a899badb-c05f-4189-ad21-a5ac51c9d1be",
+  "original_pre_migration_snapshot_id": "source-snapshot-pre-migration-1103fec26251a2c4",
+  "history_path": "data/migrations/history/migration-a899badb-c05f-4189-ad21-a5ac51c9d1be.json"
+}

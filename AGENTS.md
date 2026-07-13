@@ -1,8 +1,8 @@
 For future agents working in this repository:
 
 - Read `docs/index.md` first for the documentation map.
-- Treat files under `config/` as stable configuration for the current MVP unless the user explicitly asks to change them.
-- Treat files under `src/` as the implemented demo source code. The current implemented fetch path is RSS-only; do not assume MCP/API/HTML sources are fetchable just because templates or contracts mention them.
+- Treat files under `config/` as stable configuration unless the user explicitly asks to change them. In L4, `config/sources.yml` is a backed-up bootstrap/import artifact and `config/user-profile.yml` is legacy compatibility; SQLite SourceCatalog/ProfileStore are the default runtime truth.
+- Treat files under `src/` as implemented source code. Current network acquisition connectors are RSS/RSSHub, plus user-supplied Inbox ingestion; do not assume MCP/API/HTML/browser sources are fetchable merely because contracts mention them.
 - Put Codex-generated workspace artifacts under `codex-workspace/` instead of project docs or source directories. For example, planning/spec artifacts that previously lived under `docs/superpowers/` belong under `codex-workspace/docs/superpowers/`.
 
 ### 多分支并行开发

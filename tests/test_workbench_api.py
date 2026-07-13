@@ -5,6 +5,9 @@ from web_workbench.app import app
 from agentic_core.schemas import RunResult
 
 
+ORIGIN = "http://testserver"
+
+
 def test_health_endpoint():
     client = TestClient(app)
 
@@ -127,6 +130,7 @@ def test_provider_settings_saves_api_key_to_env_without_leaking_secret(
 
     response = client.post(
         "/api/provider-settings",
+        headers={"origin": ORIGIN},
         json={
             "api_key": "sk-test-secret",
             "base_url": "https://example.test/v1",
@@ -177,6 +181,7 @@ def test_provider_settings_saves_profile_specific_key_and_model(monkeypatch, tmp
 
     response = client.post(
         "/api/provider-settings",
+        headers={"origin": ORIGIN},
         json={
             "provider_id": "deepseek",
             "api_key": "deepseek-secret",
@@ -212,6 +217,7 @@ def test_provider_settings_creates_named_custom_provider(monkeypatch, tmp_path):
 
     response = client.post(
         "/api/provider-settings",
+        headers={"origin": ORIGIN},
         json={
             "provider_id": "custom",
             "config_name": "Moonshot AI",
@@ -256,6 +262,7 @@ def test_provider_settings_creates_named_config_from_provider_template(
 
     response = client.post(
         "/api/provider-settings",
+        headers={"origin": ORIGIN},
         json={
             "provider_id": "deepseek",
             "config_name": "Work DeepSeek",
@@ -289,6 +296,7 @@ def test_provider_settings_rejects_custom_provider_name_collision(monkeypatch, t
 
     response = client.post(
         "/api/provider-settings",
+        headers={"origin": ORIGIN},
         json={
             "provider_id": "custom",
             "config_name": "OpenAI",
@@ -370,6 +378,7 @@ def test_provider_settings_preserves_existing_env_lines(monkeypatch, tmp_path):
 
     response = client.post(
         "/api/provider-settings",
+        headers={"origin": ORIGIN},
         json={"api_key": "sk-new"},
     )
 
@@ -393,6 +402,7 @@ def test_provider_settings_preserves_existing_local_config(monkeypatch, tmp_path
 
     response = client.post(
         "/api/provider-settings",
+        headers={"origin": ORIGIN},
         json={"model": "gpt-4.1-mini"},
     )
 
@@ -409,6 +419,7 @@ def test_provider_settings_rejects_newline_values(monkeypatch, tmp_path):
 
     response = client.post(
         "/api/provider-settings",
+        headers={"origin": ORIGIN},
         json={"api_key": "sk-test\nSECRET"},
     )
 
@@ -432,6 +443,8 @@ def test_agent_root_missing_ui(monkeypatch, tmp_path):
 
 
 def test_chat_returns_fake_result(monkeypatch):
+    lifecycle = {"closed": False}
+
     class FakeCore:
         @classmethod
         def from_config(cls, _config):
@@ -440,12 +453,16 @@ def test_chat_returns_fake_result(monkeypatch):
         def run(self, **_kwargs):
             return RunResult(status="ok", messages=[], final_text="fake response")
 
+        def close(self):
+            lifecycle["closed"] = True
+
     monkeypatch.setattr(workbench_app, "AgenticCore", FakeCore)
 
     client = TestClient(workbench_app.app)
 
     response = client.post(
         "/api/chat",
+        headers={"origin": ORIGIN},
         json={"message": "hi", "config_path": "config/agentic-core.example.yml"},
     )
 
@@ -459,6 +476,34 @@ def test_chat_returns_fake_result(monkeypatch):
         "usage": {},
         "errors": [],
     }
+    assert lifecycle["closed"] is True
+
+
+def test_chat_closes_core_when_run_fails(monkeypatch):
+    lifecycle = {"closed": False}
+
+    class FakeCore:
+        @classmethod
+        def from_config(cls, _config):
+            return cls()
+
+        def run(self, **_kwargs):
+            raise RuntimeError("model failed")
+
+        def close(self):
+            lifecycle["closed"] = True
+
+    monkeypatch.setattr(workbench_app, "AgenticCore", FakeCore)
+
+    response = TestClient(workbench_app.app).post(
+        "/api/chat",
+        headers={"origin": ORIGIN},
+        json={"message": "hi", "config_path": "config/agentic-core.example.yml"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["errors"] == ["model failed"]
+    assert lifecycle["closed"] is True
 
 
 def test_chat_config_path_outside_repo_error():
@@ -466,6 +511,7 @@ def test_chat_config_path_outside_repo_error():
 
     response = client.post(
         "/api/chat",
+        headers={"origin": ORIGIN},
         json={"message": "hi", "config_path": "../../etc/passwd"},
     )
 
@@ -480,6 +526,7 @@ def test_chat_non_yaml_config_error():
 
     response = client.post(
         "/api/chat",
+        headers={"origin": ORIGIN},
         json={"message": "hi", "config_path": "config/agentic-core.example.txt"},
     )
 
@@ -501,6 +548,7 @@ def test_chat_from_config_error_is_returned_as_runresult(monkeypatch):
 
     response = client.post(
         "/api/chat",
+        headers={"origin": ORIGIN},
         json={"message": "hi", "config_path": "config/agentic-core.example.yml"},
     )
 

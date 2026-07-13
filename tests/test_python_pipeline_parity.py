@@ -1,9 +1,21 @@
 import json
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 import yaml
 
+from agentic_core.feature_flags import L4FeatureFlags
+from agentic_core.l4.database import Database
+from agentic_core.l4.domain import (
+    ContextEventType,
+    Explicitness,
+    ProfileField,
+    ProfileSnapshot,
+    UserContextEvent,
+)
+from agentic_core.l4.hashing import profile_snapshot_hash
+from agentic_core.l4.repositories import ContextEventRepository, ProfileRepository
 from agentic_core.pipeline import build_signals as py_build_signals
 from agentic_core.pipeline import ingest_adapter_output as py_ingest
 from agentic_core.pipeline.fetch_rss import parse_feed
@@ -198,6 +210,86 @@ def test_python_runner_succeeded_empty_without_rss_sources(tmp_path):
     assert status["status"] == "succeeded_empty"
     assert read_json(tmp_path / "data/signals/latest.json")["summary"]["signals"] == 0
     assert read_json(tmp_path / "data/app/refresh-status.json")["status"] == "succeeded_empty"
+
+
+def test_profile_flag_on_uses_neutral_store_profile_not_hardcoded_yaml(tmp_path):
+    write_yaml(tmp_path / "config/sources.yml", {"version": 1, "sources": []})
+    write_yaml(tmp_path / "config/ingestion-rules.yml", sample_ingestion_rules())
+    write_yaml(
+        tmp_path / "config/user-profile.yml",
+        {"interests": ["THIS HARD-CODED PROFILE MUST NOT BE USED"]},
+    )
+    write_yaml(tmp_path / "config/signal-rules.yml", sample_signal_rules())
+    database = Database(":memory:")
+    profiles = ProfileRepository(database)
+
+    status = PipelineRunner(
+        root=tmp_path,
+        l4_feature_flags=L4FeatureFlags(profile_enabled=True),
+        profile_repository=profiles,
+        user_id="user-1",
+    ).refresh()
+    output = read_json(tmp_path / "data/signals/latest.json")
+
+    assert status["status"] == "succeeded_empty"
+    assert output["profile_status"] == "uninitialized"
+    assert output["profile_id"] is None
+    assert output["profile_hash"] is None
+    database.close()
+
+
+def test_profile_flag_on_links_active_profile_to_signals(tmp_path):
+    write_yaml(tmp_path / "config/sources.yml", {"version": 1, "sources": []})
+    write_yaml(tmp_path / "config/ingestion-rules.yml", sample_ingestion_rules())
+    write_yaml(tmp_path / "config/user-profile.yml", sample_profile())
+    write_yaml(tmp_path / "config/signal-rules.yml", sample_signal_rules())
+    database = Database(":memory:")
+    events = ContextEventRepository(database)
+    profiles = ProfileRepository(database)
+    event = UserContextEvent(
+        event_id="event-1",
+        user_id="user-1",
+        event_type=ContextEventType.USER_STATEMENT,
+        payload={"text": "AI agents"},
+        origin="test",
+        explicitness=Explicitness.EXPLICIT,
+        occurred_at=datetime.fromisoformat("2026-07-12T00:00:00+00:00"),
+        idempotency_key="context:v1:event-1",
+    )
+    events.append(event)
+    draft = ProfileSnapshot(
+        profile_id="profile-1",
+        user_id="user-1",
+        based_on_event_ids=("event-1",),
+        fields={
+            "interests": ProfileField(
+                value=["AI Agent"],
+                provenance_event_ids=("event-1",),
+                confidence=1,
+            )
+        },
+        model_id="fixture",
+        prompt_version="v1",
+        policy_version="v1",
+        profile_hash="pending",
+    )
+    snapshot = draft.model_copy(
+        update={"profile_hash": profile_snapshot_hash(draft)}
+    )
+    profiles.save_and_activate(snapshot)
+
+    PipelineRunner(
+        root=tmp_path,
+        l4_feature_flags=L4FeatureFlags(profile_enabled=True),
+        profile_repository=profiles,
+        user_id="user-1",
+    ).refresh()
+    output = read_json(tmp_path / "data/signals/latest.json")
+
+    assert output["profile_status"] == "active"
+    assert output["profile_id"] == "profile-1"
+    assert output["profile_hash"] == snapshot.profile_hash
+    database.close()
 
 
 def test_python_runner_reports_failed_sources_without_failing_other_sources(monkeypatch, tmp_path):

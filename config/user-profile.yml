@@ -1,3 +1,5 @@
+# LEGACY COMPATIBILITY ONLY. This file is not a real user's profile and is not
+# imported into ProfileStore. Use the dashboard current-info input instead.
 version: 1
 
 user:

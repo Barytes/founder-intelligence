@@ -81,6 +81,8 @@ let state = {
   sourcePath: "config/sources.yml",
   sourcesContent: "",
   sourceEditorOpen: false,
+  sourceOfTruth: "yaml",
+  profile: null,
   profilePath: "config/user-profile.yml",
   selectedId: "",
   cluster: "全部",
@@ -118,21 +120,23 @@ async function fetchJson(path, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(payload.message || `${path} 请求失败（HTTP ${response.status}）`);
+    throw new Error(payload.message || (Array.isArray(payload.errors) ? payload.errors.join("；") : "") || `${path} 请求失败（HTTP ${response.status}）`);
   }
   return payload;
 }
 
 async function loadData() {
   try {
-    const [signals, refreshStatus, sources] = await Promise.all([
+    const [signals, refreshStatus, sources, profile] = await Promise.all([
       fetchJson("/api/signals/latest"),
       fetchJson("/api/refresh/status"),
-      fetchJson("/api/sources")
+      fetchJson("/api/sources"),
+      fetchJson("/api/profile/current")
     ]);
     state.error = "";
     state.payload = signals;
     applySourcesPayload(sources);
+    state.profile = profile;
     syncSelectedSignal();
     render(refreshStatus);
   } catch (error) {
@@ -150,6 +154,7 @@ function applySourcesPayload(payload) {
   state.sourcePath = payload.path || "config/sources.yml";
   state.sourcesContent = payload.content || "";
   state.sources = payload.sources || [];
+  state.sourceOfTruth = payload.source_of_truth || "yaml";
 }
 
 function signals() {
@@ -242,6 +247,7 @@ function statusText(status) {
   if (status.status === "failed" || status.status === "failed_stale_lock") return `刷新失败：${status.last_error || status.status}`;
   if (status.status === "succeeded_empty") return `刷新完成，但暂无可展示信号。${refreshSummaryText(status)}`;
   if (status.status === "succeeded") return `刷新完成。${refreshSummaryText(status)}`;
+  if (status.status === "succeeded_partial") return `刷新完成，但部分能力已降级：${(status.degraded_reasons || []).join("；") || "部分来源或智能评分失败"}。${refreshSummaryText(status)}`;
   return status.status;
 }
 
@@ -289,6 +295,10 @@ function render(refreshStatus = { status: "idle" }) {
   document.getElementById("refresh-status").textContent = statusText(refreshStatus);
   document.getElementById("generated-at").textContent = state.payload?.generated_at || friendlyMessage(state.payload?.message) || "-";
   document.getElementById("input-run-id").textContent = state.payload?.input_run_id || "-";
+  const profileStatus = state.profile?.profile_status === "active"
+    ? `画像已更新：${state.profile?.snapshot?.profile_id || "active"}`
+    : "画像未初始化；当前使用中性画像";
+  document.getElementById("profile-live-status").textContent = profileStatus;
 }
 
 function renderError(message) {
@@ -641,8 +651,55 @@ function renderScoreBars(signal, variant = "") {
 }
 
 function scoreBasisText(signal) {
+  if (signal.score_provenance) {
+    const score = signal.score_provenance;
+    return `规则基线 ${formatFivePoint(Number(score.baseline_score || 0))}/5，智能判断 ${score.agent_component == null ? "已回退" : `${formatFivePoint(Number(score.agent_component))}/5`}，最终分由 ${score.policy_version} 在代码中合成。`;
+  }
   const freshnessSource = signal.published_at ? "发布时间" : signal.fetched_at ? "抓取时间" : "本次生成时间";
   return `职业参考后端相关性、来源优先级和画像命中；兴趣参考画像词、主题词与标签命中；新鲜根据${freshnessSource}距离当前时间估算；探索偏向新鲜、重要但与既有画像重合较少的内容。`;
+}
+
+const AGENT_DIMENSIONS = [
+  ["relevance", "相关性"],
+  ["novelty", "新颖性"],
+  ["credibility", "可信度"],
+  ["urgency", "紧迫性"],
+  ["counter_signal", "反向信号"]
+];
+
+function renderAgentAssessment(signal) {
+  const assessment = signal.agent_assessment;
+  const provenance = signal.score_provenance || {};
+  if (!assessment || signal.agent_status !== "valid") {
+    return `
+      <section class="detail-section agent-assessment is-fallback">
+        <h4>Agent 新闻判断</h4>
+        <p>本条未使用有效 Agent 判断：${esc(provenance.fallback_reason || "未进入候选池或模型不可用")}。</p>
+      </section>
+    `;
+  }
+  const baselineRank = Number(signal.baseline_rank || 0);
+  const finalRank = Number(signal.final_rank || 0);
+  const delta = Number(signal.rank_delta || 0);
+  const rankText = baselineRank && finalRank
+    ? `规则排序第 ${baselineRank}，混合排序第 ${finalRank}（${delta > 0 ? `上升 ${delta}` : delta < 0 ? `下降 ${Math.abs(delta)}` : "未变化"}）。`
+    : "暂无可比较的排序变化。";
+  return `
+    <section class="detail-section agent-assessment">
+      <h4>Agent 新闻判断</h4>
+      <div class="agent-dimensions">
+        ${AGENT_DIMENSIONS.map(([key, label]) => `
+          <span><b>${esc(label)}</b>${formatFivePoint(Number(assessment[key] || 0) * 5)}/5</span>
+        `).join("")}
+      </div>
+      <p>${esc(assessment.reasoning_summary || "")}</p>
+      <p class="score-note">${esc(rankText)}</p>
+      <div class="agent-evidence">
+        <b>原文证据</b>
+        <ul>${(assessment.evidence_spans || []).map((span) => `<li>${esc(span.quote || "")}</li>`).join("")}</ul>
+      </div>
+    </section>
+  `;
 }
 
 function renderDetail() {
@@ -671,7 +728,10 @@ function renderDetail() {
       <div class="trace-row"><time>${esc(state.payload?.generated_at || "-")}</time><span>抓取来源：${esc(sourceDisplayName(signal.source))}</span></div>
       <div class="trace-row"><time>接口</time><span>来自 /api/signals/latest 的最近一次成功信号</span></div>
       <div class="trace-row"><time>批次</time><span>输入批次：${esc(state.payload?.input_run_id || "-")}</span></div>
+      <div class="trace-row"><time>工作流</time><span>${esc(signal.workflow_run_id || state.payload?.workflow_run_id || "legacy")}</span></div>
+      <div class="trace-row"><time>智能判断</time><span>${esc(signal.agent_status || "未启用")} / ${esc(signal.score_provenance?.policy_version || "deterministic")}</span></div>
     </section>
+    ${renderAgentAssessment(signal)}
     <section class="detail-section">
       <h4>为什么重要</h4>
       <p>${esc(signal.why_important || signal.why_relevant || "")}</p>
@@ -805,10 +865,12 @@ function renderExpandedFolder() {
   overlay.hidden = false;
   document.getElementById("folder-title").textContent = categoryLabel(state.openFolder);
   document.getElementById("folder-subtitle").textContent =
-    "启用状态会写入 config/sources.yml；未实现来源不可运行";
+    state.sourceOfTruth === "sqlite_catalog"
+      ? "SQLite SourceCatalog 是 source of truth；状态不会写回 YAML"
+      : "Legacy fallback 正在读取 config/sources.yml";
   document.getElementById("source-config-panel").hidden = !state.sourceEditorOpen;
   document.getElementById("save-source-config").hidden = !state.sourceEditorOpen;
-  document.getElementById("edit-source-config").textContent = state.sourceEditorOpen ? "收起编辑器" : "编辑 sources.yml";
+  document.getElementById("edit-source-config").textContent = state.sourceEditorOpen ? "收起编辑器" : "导入 legacy sources.yml";
   if (state.sourceEditorOpen && document.activeElement?.id !== "source-config-text") {
     document.getElementById("source-config-text").value = state.sourcesContent;
   }
@@ -816,7 +878,7 @@ function renderExpandedFolder() {
     <article class="expanded-source${source.runnable ? "" : " is-muted"}">
       ${renderSourceLogo(source, "expanded-logo")}
       <div class="expanded-source-name">${esc(sourceDisplayName(source))}</div>
-      <div class="expanded-source-meta">${esc(sourceTypeLabel(source.type))} / ${esc(source.cadence)} / ${source.enabled ? "已启用" : "已停用"}</div>
+      <div class="expanded-source-meta">${esc(sourceTypeLabel(source.type))} / ${esc(source.cadence)} / ${esc(source.tracking_state || (source.enabled ? "active" : "paused"))}</div>
       <div class="source-control-row">
         <button
           class="source-control primary"
@@ -860,7 +922,7 @@ function toggleSourceConfigEditor() {
     editor.setSelectionRange(0, 0);
     document.getElementById("folder-status").textContent = `正在编辑 ${state.sourcePath}`;
   } else {
-    document.getElementById("folder-status").textContent = "刷新会读取 config/sources.yml 中已启用的 RSS 来源";
+    document.getElementById("folder-status").textContent = state.sourceOfTruth === "sqlite_catalog" ? "当前来源状态由 SourceCatalog 管理" : "Legacy fallback 会读取 sources.yml";
   }
 }
 
@@ -891,6 +953,52 @@ async function refresh() {
     await loadData();
   } catch (error) {
     renderError(error.message);
+  }
+}
+
+async function saveCurrentContext() {
+  const text = document.getElementById("context-input").value.trim();
+  if (!text) return;
+  const status = document.getElementById("profile-live-status");
+  status.textContent = "正在更新画像…";
+  try {
+    const result = await fetchJson("/api/context/events", {
+      method: "POST",
+      body: JSON.stringify({
+        event_type: "user_statement",
+        payload: { text },
+        origin: "dashboard"
+      })
+    });
+    state.profile = await fetchJson("/api/profile/current");
+    document.getElementById("context-input").value = "";
+    status.textContent = result.profile_status === "active"
+      ? `画像已更新：${result.profile?.profile_id || "active"}`
+      : `信息已保存，画像状态：${result.profile_status}`;
+  } catch (error) {
+    status.textContent = `更新失败：${error.message}`;
+  }
+}
+
+async function shareInboxItem() {
+  const url = document.getElementById("inbox-url").value.trim();
+  const title = document.getElementById("inbox-title").value.trim();
+  if (!url) return;
+  const status = document.getElementById("inbox-live-status");
+  status.textContent = "正在保存…";
+  try {
+    const result = await fetchJson("/api/inbox/items", {
+      method: "POST",
+      body: JSON.stringify({ url, title: title || null, note: title || null })
+    });
+    document.getElementById("inbox-url").value = "";
+    document.getElementById("inbox-title").value = "";
+    status.textContent = result.item?.tracking_state === "probation"
+      ? "已保存，持续追踪正在试运行"
+      : "已保存到 Inbox；持续追踪尚未解析";
+    await loadSources();
+  } catch (error) {
+    status.textContent = `保存失败：${error.message}`;
   }
 }
 
@@ -967,6 +1075,8 @@ async function importUserProfile(event) {
 
 function bindControls() {
   document.getElementById("refresh-button").addEventListener("click", refresh);
+  document.getElementById("save-context").addEventListener("click", saveCurrentContext);
+  document.getElementById("share-inbox").addEventListener("click", shareInboxItem);
   document.getElementById("open-user-profile").addEventListener("click", openUserProfile);
   document.getElementById("close-user-profile").addEventListener("click", closeUserProfile);
   document.getElementById("save-user-profile").addEventListener("click", saveUserProfile);

@@ -10,6 +10,10 @@ from typing import Any
 
 import yaml
 
+from agentic_core.feature_flags import L4FeatureFlags, load_l4_feature_flags
+from agentic_core.l4.database import Database
+from agentic_core.l4.repositories import ProfileRepository
+from agentic_core.l4.source_catalog import SourceCatalog, snapshot_to_sources_config
 from agentic_core.pipeline import build_signals, fetch_rss, ingest_adapter_output, store_canonical_jsonl
 
 
@@ -19,7 +23,22 @@ SENSITIVE_VALUE_PATTERN = re.compile(
 
 
 class PipelineRunner:
-    def __init__(self, root: str | Path, timeout_seconds: int = 120):
+    def __init__(
+        self,
+        root: str | Path,
+        timeout_seconds: int = 120,
+        *,
+        l4_feature_flags: L4FeatureFlags | None = None,
+        profile_repository: ProfileRepository | None = None,
+        source_catalog: SourceCatalog | None = None,
+        user_id: str = "local-user",
+        l4_database: Database | None = None,
+        profile_service: Any | None = None,
+        source_discovery_service: Any | None = None,
+        ranking_service: Any | None = None,
+        inbox_repository: Any | None = None,
+        workflow_repository: Any | None = None,
+    ):
         self.root = Path(root).resolve()
         self.timeout_seconds = timeout_seconds
         self.request_id: str | None = None
@@ -29,8 +48,29 @@ class PipelineRunner:
         self.signal_diff: dict[str, Any] | None = None
         self.adapter_summary: dict[str, Any] | None = None
         self.step_results: list[dict[str, Any]] = []
+        self.l4_feature_flags = l4_feature_flags or load_l4_feature_flags()
+        self.profile_repository = profile_repository
+        self.user_id = user_id
+        self.source_catalog = source_catalog
+        self.l4_database = l4_database
+        self.profile_service = profile_service
+        self.source_discovery_service = source_discovery_service
+        self.ranking_service = ranking_service
+        self.inbox_repository = inbox_repository
+        self.workflow_repository = workflow_repository
+        self.source_snapshot = None
+        self.resolved_sources_config: dict[str, Any] | None = None
+        self.workflow_run_id: str | None = None
+        self.profile_id: str | None = None
+        self.agent_stage_status: str | None = None
+        self.degraded_reasons: list[str] = []
+        self.workflow_usage: dict[str, Any] = {}
 
     def refresh(self) -> dict[str, Any]:
+        if self.l4_feature_flags.workflow_enabled:
+            from agentic_core.l4.workflow import L4WorkflowRunner
+
+            return L4WorkflowRunner(self).refresh()
         self.app_dir().mkdir(parents=True, exist_ok=True)
         lock_result = self.acquire_lock()
         if lock_result["status"] != "locked":
@@ -41,6 +81,8 @@ class PipelineRunner:
         self.store_summary = None
         self.signal_diff = None
         self.adapter_summary = None
+        self.source_snapshot = None
+        self.resolved_sources_config = None
         self.write_status("running", {"current_step": None, "command_results": []})
         try:
             self.step_fetch_rss()
@@ -73,7 +115,7 @@ class PipelineRunner:
         self.run_step("fetch_rss", self._step_fetch_rss)
 
     def _step_fetch_rss(self):
-        sources = yaml.safe_load((self.root / "config/sources.yml").read_text(encoding="utf-8"))
+        sources = self._resolve_sources_config()
         rules = yaml.safe_load((self.root / "config/ingestion-rules.yml").read_text(encoding="utf-8"))
         output = fetch_rss.fetch(sources, rules)
         self.write_json(self.root / "data/adapter-output/rss-fetch-latest.json", output)
@@ -85,9 +127,10 @@ class PipelineRunner:
     def _step_ingest_adapter_output(self):
         output = ingest_adapter_output.run(
             self.root / "data/adapter-output/rss-fetch-latest.json",
-            self.root / "config/sources.yml",
+            None if self.resolved_sources_config is not None else self.root / "config/sources.yml",
             self.root / "config/ingestion-rules.yml",
             self.root / "data/canonical-items/latest.json",
+            sources_override=self.resolved_sources_config,
         )
         self.current_run_id = output.get("run_id")
 
@@ -101,17 +144,80 @@ class PipelineRunner:
         self.run_step("build_signals", self._step_build_signals)
 
     def _step_build_signals(self):
-        build_signals.run(
-            self.root / "data/canonical-items/latest.json",
-            self.root / "config/user-profile.yml",
-            self.root / "config/signal-rules.yml",
-            self.temp_signals_path(),
-            self.temp_markdown_path(),
-            self.temp_html_path(),
-        )
+        profile_path: Path | None = self.root / "config/user-profile.yml"
+        profile_override = None
+        profile_id = None
+        profile_hash = None
+        profile_status = None
+        owned_database: Database | None = None
+        if self.l4_feature_flags.profile_enabled:
+            repository = self.profile_repository
+            if repository is None:
+                owned_database = Database(
+                    self.root / "data/app/founder-intelligence.db"
+                )
+                repository = ProfileRepository(owned_database)
+            effective = repository.resolve_effective_profile(self.user_id)
+            profile_path = None
+            profile_override = self._legacy_profile_view(effective.fields)
+            profile_id = effective.profile_id
+            profile_hash = effective.profile_hash
+            profile_status = "active" if effective.initialized else "uninitialized"
+        try:
+            build_signals.run(
+                self.root / "data/canonical-items/latest.json",
+                profile_path,
+                self.root / "config/signal-rules.yml",
+                self.temp_signals_path(),
+                self.temp_markdown_path(),
+                self.temp_html_path(),
+                profile_override=profile_override,
+                profile_id=profile_id,
+                profile_hash=profile_hash,
+                profile_status=profile_status,
+            )
+        finally:
+            if owned_database is not None:
+                owned_database.close()
         signals = self.parsed_temp_signals()
         if self.current_run_id and signals.get("input_run_id") != self.current_run_id:
             raise RuntimeError("Signal input_run_id does not match canonical run_id")
+
+    def _resolve_sources_config(self) -> dict[str, Any]:
+        if not self.l4_feature_flags.source_catalog_enabled:
+            return yaml.safe_load(
+                (self.root / "config/sources.yml").read_text(encoding="utf-8")
+            )
+        catalog = self.source_catalog
+        owned_database = None
+        if catalog is None:
+            owned_database = Database(
+                self.root / "data/app/founder-intelligence.db"
+            )
+            catalog = SourceCatalog(owned_database)
+        try:
+            self.source_snapshot = catalog.create_snapshot(
+                snapshot_id=f"source-snapshot-{self.request_id}",
+                workflow_run_id=self.request_id,
+            )
+            self.resolved_sources_config = snapshot_to_sources_config(
+                self.source_snapshot
+            )
+            return self.resolved_sources_config
+        finally:
+            if owned_database is not None:
+                owned_database.close()
+
+    @staticmethod
+    def _legacy_profile_view(fields: dict[str, Any]) -> dict[str, Any]:
+        profile = dict(fields)
+        active_goals = profile.pop("active_goals", [])
+        if active_goals and "goals" not in profile:
+            profile["goals"] = [
+                goal if isinstance(goal, dict) else {"title": str(goal), "keywords": []}
+                for goal in active_goals
+            ]
+        return profile
 
     def run_step(self, name: str, callback) -> None:
         self.write_status("running", {"current_step": name, "command_results": self.step_results})
@@ -182,6 +288,15 @@ class PipelineRunner:
             "request_id": self.request_id,
             "last_successful_generated_at": extra.get("last_successful_generated_at"),
             "last_successful_input_run_id": extra.get("last_successful_input_run_id"),
+            "source_snapshot_id": (
+                self.source_snapshot.snapshot_id if self.source_snapshot else None
+            ),
+            "workflow_run_id": self.workflow_run_id,
+            "profile_id": self.profile_id,
+            "step_results": extra.get("command_results") or [],
+            "agent_stage_status": self.agent_stage_status,
+            "degraded_reasons": list(self.degraded_reasons),
+            "usage": dict(self.workflow_usage),
         }
         self.write_json(self.status_path(), payload)
         return payload
